@@ -1,0 +1,268 @@
+# Maintenance Guide
+### RPi Sensor Programming & Manufacturing Traceability Station
+
+Audience: maintenance and manufacturing engineering. Assumes shell access to the
+station.
+
+---
+
+## 1. Layout
+
+| Path | Contents |
+|---|---|
+| `/opt/progstation` | Application and its virtual environment |
+| `/etc/progstation/station.yaml` | Station configuration |
+| `/etc/progstation/avrdude-linuxspi.conf` | avrdude fragment pinning RESET to GPIO25 |
+| `/etc/progstation/smb-credentials` | Backup share credentials (root, `chmod 600`) |
+| `/var/lib/progstation/progstation.db` | **Production database — the traceability record** |
+| `/var/lib/progstation/exports` | Generated XLSX files |
+| `/var/log/progstation/progstation.log` | Rotating application log |
+
+Service units: `progstation.service` (the touchscreen),
+`progstation-backup.timer` / `.service` (scheduled backup).
+
+```bash
+systemctl status progstation
+journalctl -u progstation -f
+systemctl restart progstation
+```
+
+---
+
+## 2. First checks on any fault
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation status
+sudo -u progstation /opt/progstation/venv/bin/progstation selftest --outputs
+```
+
+`status` reports the GPIO backend, avrdude version, database path and last
+backup. `selftest --outputs` additionally blinks the LEDs and sounds the buzzer.
+
+> **If `status` reports `gpio_backend: simulated` on a real station, it is not
+> programming anything.** The station fell back to simulation because the GPIO
+> driver was unavailable — see section 4.
+
+---
+
+## 3. Programming faults
+
+### 3.1 Every board reports `E_NO_DEVICE`
+
+The signature read came back all-zeros or all-ones, meaning the ISP bus is
+floating. In likelihood order:
+
+1. **Fixture contacts** — the usual cause. Inspect and clean the pogo pins.
+2. **Target power** — the AVR must be powered by the fixture; ISP does not power it.
+3. **SPI not enabled** — `ls /dev/spidev0.*` must list a device. If it does not:
+   ```bash
+   sudo raspi-config nonint do_spi 0 && sudo reboot
+   ```
+4. **Level shifter** — check its enable pin and that it is powered on both rails.
+5. **SPI clock too fast** — a factory-fused AVR runs at 1 MHz, so ISP must stay
+   below 250 kHz. Lower `avrdude.baudrate` to `125000` and retry.
+
+Reproduce outside the application to split hardware from software:
+
+```bash
+avrdude -C +/etc/progstation/avrdude-linuxspi.conf \
+        -p atmega328p -c linuxspi -P /dev/spidev0.0 -b 200000 -v
+```
+
+### 3.2 `E_SIGNATURE_MISMATCH`
+
+The station read a valid signature that is not the one the project expects.
+Almost always the wrong product selected or the wrong board loaded. The error
+detail names both the expected and the found signature.
+
+### 3.3 Intermittent `E_FLASH_VERIFY` or `E_EEPROM_VERIFY`
+
+Programming started, so the bus works — this is a marginal connection.
+
+- Clean the pogo pins and check fixture pressure.
+- Shorten the ISP harness; SPI at 200 kHz tolerates little capacitance.
+- Lower `avrdude.baudrate`.
+- Check the target's decoupling if a whole batch behaves this way.
+
+### 3.4 A board bricked after a fuse change
+
+Setting the clock-source fuse to an external crystal the board does not have
+disables ISP. Recovery needs a high-voltage programmer. Prevent this by proving
+fuse settings on a sacrificial board before releasing a project.
+
+---
+
+## 4. GPIO backend fell back to simulation
+
+The station probes `lgpio`, then `gpiozero`, then falls back to simulation so it
+still starts. Diagnose:
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/python -c "import lgpio; print(lgpio.gpiochip_open(0))"
+```
+
+- `ModuleNotFoundError` → `/opt/progstation/venv/bin/pip install lgpio`
+- Permission error → the service account is not in the `gpio` group:
+  ```bash
+  sudo usermod -aG gpio progstation && sudo systemctl restart progstation
+  ```
+- Device busy → another process holds the pins. `sudo fuser -v /dev/gpiochip0`
+
+Force a backend by setting `gpio.backend: lgpio` in `station.yaml`; the station
+will then fail loudly instead of falling back silently.
+
+---
+
+## 5. Serial numbers
+
+Read and set the counter:
+
+```bash
+progstation project serial TempSensor
+progstation project serial TempSensor --set 5000 --actor "your.name"
+```
+
+Both the GUI and the CLI write the change to `AuditLog` with the old and new
+values. `--actor` is what gets recorded — use a real name.
+
+**The counter only advances inside the same transaction that commits a PASS
+record.** A power loss mid-cycle therefore leaves the counter untouched: the
+board on the fixture is unprogrammed or partly programmed and its number is
+still available. Reprogram it normally.
+
+If a counter is ever suspected wrong, the log is authoritative:
+
+```bash
+progstation history --result PASS --limit 5
+```
+
+---
+
+## 6. Database
+
+### 6.1 Backup
+
+```bash
+progstation backup run          # immediate
+progstation backup status       # result of the last attempt
+systemctl list-timers progstation-backup.timer
+```
+
+Backups use SQLite `VACUUM INTO`, so the snapshot is consistent even if a cycle
+commits during the copy. Each run writes to
+`<share>/progstation/<station-id>/<timestamp>/` and prunes folders older than
+`backup.keep_days`.
+
+Backup failures are logged to `BackupLog` and shown in the status bar. **They
+never stop production** — a station that cannot reach the file server keeps
+programming and recording locally.
+
+### 6.2 Backup share will not mount
+
+```bash
+sudo mount -t cifs //fileserver/production /mnt/progstation-backup \
+     -o credentials=/etc/progstation/smb-credentials,vers=3.0
+```
+
+- `Permission denied` → credentials file. It must be root-owned, `chmod 600`,
+  and contain `username=` / `password=` lines with no quotes.
+- `Host is down` with a working ping → SMB version. Try `vers=2.1` or `vers=3.1.1`
+  in `backup.mount_options`.
+- Mounted by `/etc/fstab` instead? Set `backup.manage_mount: false`.
+
+### 6.3 Restore
+
+```bash
+sudo systemctl stop progstation
+sudo cp /var/lib/progstation/progstation.db /var/lib/progstation/progstation.db.bad
+sudo cp /mnt/progstation-backup/progstation/STATION-01/<timestamp>/progstation.db \
+        /var/lib/progstation/progstation.db
+sudo chown progstation:progstation /var/lib/progstation/progstation.db
+sudo -u progstation /opt/progstation/venv/bin/progstation status
+sudo systemctl start progstation
+```
+
+Keep the `.bad` copy: records created after the backup live only there, and can
+be recovered by an engineer with SQLite.
+
+### 6.4 Integrity check
+
+```bash
+sudo -u progstation sqlite3 /var/lib/progstation/progstation.db "PRAGMA integrity_check;"
+```
+
+Anything other than `ok` means restore from backup. Do not run production on a
+database that fails this check — traceability is no longer trustworthy.
+
+---
+
+## 7. Users
+
+```bash
+progstation user list
+progstation user add jsmith --role operator --actor "your.name"
+progstation user passwd jsmith --actor "your.name"
+progstation user set jsmith --active false --actor "your.name"
+```
+
+**Locked out of every administrator account?** Create one directly:
+
+```bash
+sudo systemctl stop progstation
+sudo -u progstation /opt/progstation/venv/bin/progstation \
+     user add recovery --role admin --actor "maintenance"
+sudo systemctl start progstation
+```
+
+This is itself audited. Passwords cannot be recovered, only reset — they are
+stored as salted PBKDF2-SHA256 hashes.
+
+---
+
+## 8. Upgrading
+
+```bash
+cd /path/to/checkout && git pull
+sudo ./install.sh
+```
+
+Re-running the installer is safe: it never overwrites `station.yaml` (a new
+template lands at `station.yaml.new` for diffing) and never touches the
+database. Schema migrations run automatically at startup, guarded by
+`PRAGMA user_version`.
+
+**Back up before upgrading:**
+
+```bash
+progstation backup run
+```
+
+---
+
+## 9. Touchscreen problems
+
+| Symptom | Fix |
+|---|---|
+| Black screen, service running | Wrong Qt platform. Try `QT_QPA_PLATFORM=eglfs` in `progstation.service` |
+| Display rotated | Set `QT_QPA_EGLFS_ROTATION=180` in the unit, or fix the display overlay in `config.txt` |
+| Touch offset from the cursor | Calibrate the panel; check the vendor overlay in `/boot/firmware/config.txt` |
+| Falls back to a window | Expected under X/Wayland; `showFullScreen` still applies |
+
+Test the GUI without the panel:
+
+```bash
+QT_QPA_PLATFORM=offscreen progstation --simulate gui --windowed
+```
+
+---
+
+## 10. Preventive maintenance
+
+| Interval | Task |
+|---|---|
+| Daily | Check the backup status in the status bar |
+| Weekly | Review the Failures tab; a rising `E_FLASH_VERIFY` rate means fixture wear |
+| Monthly | Clean the fixture pogo pins; run `selftest --outputs` |
+| Monthly | Verify a restore actually works from the newest backup |
+| Quarterly | `PRAGMA integrity_check`; review the audit log for unexpected counter overrides |
+| On firmware change | Update the project, re-preview the EEPROM block, program one board and verify it |

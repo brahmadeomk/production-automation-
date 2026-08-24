@@ -1,0 +1,37 @@
+[Unit]
+Description=RPi Sensor Programming Station (touchscreen)
+Documentation=file:/opt/progstation/docs/USER_MANUAL.md
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+User=progstation
+Group=progstation
+# The station owns the panel, so it needs the framebuffer, gpio and spi groups.
+SupplementaryGroups=gpio spi video render input
+
+WorkingDirectory=/opt/progstation
+Environment=PROGSTATION_CONFIG=/etc/progstation/station.yaml
+Environment=QT_QPA_PLATFORM=linuxfb
+Environment=QT_QPA_FB_DRM=1
+# Rotate/calibrate the 7-inch panel here if the vendor overlay does not.
+# Environment=QT_QPA_EGLFS_ROTATION=180
+
+ExecStart=/opt/progstation/venv/bin/progstation gui
+Restart=always
+RestartSec=5
+
+# The station must survive an operator power-cycling the fixture mid-shift.
+StandardOutput=journal
+StandardError=journal
+
+# Hardening that still leaves SPI, GPIO and the network share reachable.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/progstation /var/log/progstation /mnt/progstation-backup
+
+[Install]
+WantedBy=multi-user.target

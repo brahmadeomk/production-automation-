@@ -1,0 +1,11 @@
+[Unit]
+Description=RPi Programming Station -- network backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Mounting the CIFS share needs root; the station process itself does not.
+User=root
+Environment=PROGSTATION_CONFIG=/etc/progstation/station.yaml
+ExecStart=/opt/progstation/venv/bin/progstation --actor systemd backup run

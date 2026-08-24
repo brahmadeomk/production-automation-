@@ -1,0 +1,89 @@
+# Raspberry Pi Sensor Programming Station -- configuration template.
+#
+# Copy to /etc/progstation/station.yaml and edit for the line.  Anything you
+# leave out falls back to the built-in default shown here, so it is safe to
+# keep this file down to just the values your site actually changes.
+
+station_id: STATION-01
+data_dir: /var/lib/progstation
+log_dir: /var/log/progstation
+
+# Require the physical start button rather than the on-screen START button.
+require_hardware_start: false
+# Refuse to start a cycle while the fixture-detect switch reads open.
+require_fixture_detect: true
+# Seconds the PASS/FAIL banner stays up before the station re-arms.
+result_dwell_s: 2.0
+
+# ---------------------------------------------------------------- GPIO
+# BCM pin numbers.  These match SRS section 5; change them only if the
+# interface board is wired differently.
+gpio:
+  backend: auto          # auto | lgpio | gpiozero | simulated
+  chip: 0                # /dev/gpiochip0
+  mosi: 10
+  miso: 9
+  sclk: 11
+  reset: 25
+  green_led: 17
+  red_led: 27
+  buzzer: 22
+  start_button: 23
+  fixture_detect: 24
+  # Both switches short to ground and use the internal pull-up.
+  button_active_low: true
+  fixture_active_low: true
+  debounce_ms: 40
+
+# ------------------------------------------------------------- AVRDUDE
+avrdude:
+  binary: avrdude
+  programmer: linuxspi
+  port: /dev/spidev0.0
+  # SPI clock for ISP.  Must stay below F_CPU/4 of the target: 200 kHz is
+  # safe for a factory-fused AVR running on its 1 MHz internal oscillator.
+  baudrate: 200000
+  bitclock: null
+  timeout_s: 120
+  # Config fragment that pins the linuxspi reset line; written by install.sh.
+  # The leading '+' makes avrdude append it to its built-in configuration.
+  config_file: "+/etc/progstation/avrdude-linuxspi.conf"
+  extra_args: []
+
+# ------------------------------------------------------------ database
+database:
+  path: /var/lib/progstation/progstation.db
+  busy_timeout_s: 10.0
+
+# ------------------------------------------------------- network backup
+# Set enabled: true and fill in the share to turn on scheduled backups.
+backup:
+  enabled: false
+  share: "//fileserver/production"
+  mount_point: /mnt/progstation-backup
+  subdirectory: progstation
+  username: ""
+  domain: ""
+  # A root-owned, chmod 600 file holding:
+  #     username=...
+  #     password=...
+  credentials_file: /etc/progstation/smb-credentials
+  interval_minutes: 1440       # 1440 = once a day
+  keep_days: 90
+  manage_mount: true
+  mount_options: "vers=3.0,uid=0,gid=0,file_mode=0640,dir_mode=0750"
+
+# ------------------------------------------------------------- reports
+reports:
+  export_dir: /var/lib/progstation/exports
+  company_name: ""
+  day_start_hour: 0            # shift the daily boundary if the first shift
+                               # starts before midnight-relative reporting
+
+# ------------------------------------------------------------ security
+security:
+  pbkdf2_iterations: 240000
+  session_timeout_min: 30      # idle auto-logout; 0 disables
+  min_password_length: 6
+  max_failed_logins: 5
+  lockout_minutes: 10

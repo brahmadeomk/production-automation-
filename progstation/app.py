@@ -1,0 +1,117 @@
+"""Application context: wires configuration, database, hardware and services.
+
+Both the touchscreen GUI and the CLI build one of these, so they always agree
+about which database, backend and pin map are in use.
+"""
+
+from __future__ import annotations
+
+import logging
+import logging.handlers
+from pathlib import Path
+from typing import Optional
+
+from .backup.smb import BackupManager
+from .config import StationConfig, load_config
+from .core.avrdude import AvrdudeBackend, SimulatedAvrdude
+from .core.programmer import ProgrammingEngine
+from .core.serials import SerialManager
+from .db.database import Database
+from .hw.station_io import StationIO
+from .reports.engine import ReportEngine
+from .security.auth import AuthManager, Session
+
+log = logging.getLogger(__name__)
+
+
+def configure_logging(config: StationConfig, verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    root = logging.getLogger()
+    root.setLevel(level)
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        stream = logging.StreamHandler()
+        stream.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+        root.addHandler(stream)
+    log_dir = Path(config.log_dir)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_dir / "progstation.log", maxBytes=5 * 1024 * 1024, backupCount=5
+        )
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
+        )
+        root.addHandler(file_handler)
+    except OSError as exc:  # a read-only /var must not stop production
+        log.warning("file logging disabled: %s", exc)
+
+
+class StationApp:
+    def __init__(
+        self,
+        config: Optional[StationConfig] = None,
+        *,
+        simulate: bool = False,
+        with_io: bool = True,
+    ):
+        self.config = config or load_config()
+        self.config.ensure_directories()
+        self.simulate = simulate
+
+        self.db = Database(self.config.database.path, self.config.database.busy_timeout_s)
+        self.auth = AuthManager(self.db, self.config.security)
+        self.serials = SerialManager(self.db)
+        self.reports = ReportEngine(self.db, day_start_hour=self.config.reports.day_start_hour)
+
+        self.backend: AvrdudeBackend = (
+            SimulatedAvrdude(self.config.avrdude)
+            if simulate
+            else AvrdudeBackend(self.config.avrdude)
+        )
+        self.io: Optional[StationIO] = StationIO(self.config.gpio) if with_io else None
+        if simulate and self.io:
+            # Nothing physical to close the fixture on a bench run.
+            self.io.simulate_fixture(True)
+
+        self.engine = ProgrammingEngine(self.db, self.config, self.backend, self.io)
+        self.backup = BackupManager(
+            self.config.backup,
+            self.db,
+            extra_dirs=[self.config.reports.export_dir, self.config.log_dir],
+            station_id=self.config.station_id,
+        )
+        self.session: Optional[Session] = None
+
+    # ------------------------------------------------------------------ misc
+    def bootstrap_admin(self) -> Optional[str]:
+        """Create the first administrator on a fresh database."""
+        return self.auth.ensure_default_admin()
+
+    def health(self) -> dict:
+        """Everything the status bar and the ``status`` command report."""
+        io_backend = self.io.backend.name if self.io else "none"
+        return {
+            "station_id": self.config.station_id,
+            "config": self.config.source_path or "built-in defaults",
+            "database": self.db.path,
+            "avrdude": self.backend.__class__.__name__,
+            "avrdude_available": self.backend.is_available(),
+            "avrdude_version": self.backend.version() if self.backend.is_available() else "",
+            "gpio_backend": io_backend,
+            "simulated": self.simulate or io_backend == "simulated",
+            "projects": len(self.db.list_projects()),
+            "users": len(self.db.list_users()),
+            "backup": self.backup.status(),
+        }
+
+    def close(self) -> None:
+        self.backup.stop_scheduler()
+        if self.io:
+            self.io.close()
+        self.db.close()
+
+    def __enter__(self) -> "StationApp":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()

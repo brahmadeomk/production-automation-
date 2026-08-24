@@ -1,0 +1,107 @@
+"""Touch-optimised stylesheet for the 7-inch (800x480) panel.
+
+Everything is sized for a finger on a resistive/capacitive panel: minimum 48 px
+touch targets, high contrast for a lit shop floor, and PASS/FAIL colours that
+read from a metre away.
+"""
+
+COLOR_PASS = "#1e8e3e"
+COLOR_FAIL = "#c5221f"
+COLOR_BUSY = "#e37400"
+COLOR_ACCENT = "#1a73e8"
+COLOR_BG = "#f5f6f8"
+COLOR_PANEL = "#ffffff"
+COLOR_TEXT = "#1f2430"
+COLOR_MUTED = "#5f6774"
+
+STYLESHEET = f"""
+QWidget {{
+    background: {COLOR_BG};
+    color: {COLOR_TEXT};
+    font-family: "DejaVu Sans", "Noto Sans", sans-serif;
+    font-size: 15px;
+}}
+QFrame#Card, QGroupBox {{
+    background: {COLOR_PANEL};
+    border: 1px solid #d8dbe0;
+    border-radius: 8px;
+}}
+QGroupBox {{
+    margin-top: 14px;
+    padding: 12px 10px 10px 10px;
+    font-weight: 600;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+}}
+QLabel#Title      {{ font-size: 22px; font-weight: 700; }}
+QLabel#Subtle     {{ color: {COLOR_MUTED}; font-size: 13px; }}
+QLabel#BigSerial  {{ font-size: 46px; font-weight: 700; letter-spacing: 2px; }}
+QLabel#StatusPass {{ background: {COLOR_PASS}; color: white; font-size: 40px;
+                     font-weight: 700; border-radius: 8px; padding: 14px; }}
+QLabel#StatusFail {{ background: {COLOR_FAIL}; color: white; font-size: 40px;
+                     font-weight: 700; border-radius: 8px; padding: 14px; }}
+QLabel#StatusBusy {{ background: {COLOR_BUSY}; color: white; font-size: 30px;
+                     font-weight: 700; border-radius: 8px; padding: 14px; }}
+QLabel#StatusIdle {{ background: #dfe3e8; color: {COLOR_TEXT}; font-size: 30px;
+                     font-weight: 600; border-radius: 8px; padding: 14px; }}
+QPushButton {{
+    background: {COLOR_PANEL};
+    border: 1px solid #c3c8d0;
+    border-radius: 8px;
+    padding: 12px 18px;
+    min-height: 44px;
+    font-size: 16px;
+}}
+QPushButton:hover  {{ background: #eef2fb; }}
+QPushButton:pressed {{ background: #dde5f7; }}
+QPushButton:disabled {{ color: #9aa0aa; background: #eceef1; }}
+QPushButton#Primary {{
+    background: {COLOR_ACCENT}; color: white; border: none; font-weight: 700;
+}}
+QPushButton#Primary:disabled {{ background: #a9c4f0; color: #f0f4fd; }}
+QPushButton#Start {{
+    background: {COLOR_PASS}; color: white; border: none;
+    font-size: 26px; font-weight: 700; min-height: 84px;
+}}
+QPushButton#Start:disabled {{ background: #a6cdb2; color: #eef5f0; }}
+QPushButton#Danger {{ background: {COLOR_FAIL}; color: white; border: none; }}
+QPushButton#Nav {{
+    background: transparent; border: none; border-bottom: 3px solid transparent;
+    border-radius: 0; font-size: 16px; padding: 12px 18px;
+    /* The checked state turns the label bold; reserve the width up front so
+       the text does not clip when a tab is selected. */
+    min-width: 108px;
+}}
+QPushButton#Nav:checked {{
+    border-bottom: 3px solid {COLOR_ACCENT}; color: {COLOR_ACCENT}; font-weight: 700;
+}}
+QLineEdit, QComboBox, QSpinBox, QDateEdit, QPlainTextEdit, QTextEdit {{
+    background: white; border: 1px solid #c3c8d0; border-radius: 6px;
+    padding: 10px; min-height: 40px; font-size: 15px;
+}}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 2px solid {COLOR_ACCENT}; }}
+QComboBox::drop-down {{ width: 34px; }}
+QTableWidget {{
+    background: white; border: 1px solid #d8dbe0; border-radius: 6px;
+    gridline-color: #e6e8ec; font-size: 14px;
+}}
+QHeaderView::section {{
+    background: #eef0f4; padding: 10px 8px; border: none;
+    border-right: 1px solid #dfe2e7; font-weight: 600;
+}}
+QTableWidget::item {{ padding: 8px 6px; }}
+QTableWidget::item:selected {{ background: #d9e6fb; color: {COLOR_TEXT}; }}
+QProgressBar {{
+    border: 1px solid #c3c8d0; border-radius: 6px; height: 26px;
+    text-align: center; background: white;
+}}
+QProgressBar::chunk {{ background: {COLOR_ACCENT}; border-radius: 5px; }}
+QScrollBar:vertical   {{ width: 18px; background: #eceef1; }}
+QScrollBar:horizontal {{ height: 18px; background: #eceef1; }}
+QScrollBar::handle {{ background: #b6bcc6; border-radius: 8px; min-height: 40px; }}
+QTabBar::tab {{ padding: 12px 20px; font-size: 15px; }}
+QStatusBar {{ background: #e7eaee; font-size: 13px; }}
+"""
