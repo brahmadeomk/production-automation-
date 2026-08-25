@@ -17,6 +17,7 @@ from .core.avrdude import AvrdudeBackend, SimulatedAvrdude
 from .core.programmer import ProgrammingEngine
 from .core.serials import SerialManager
 from .db.database import Database
+from .hw.gpio import available_backend
 from .hw.station_io import StationIO
 from .reports.engine import ReportEngine
 from .security.auth import AuthManager, Session
@@ -95,7 +96,16 @@ class StationApp:
 
     def health(self) -> dict:
         """Everything the status bar and the ``status`` command report."""
-        io_backend = self.io.backend.name if self.io else "none"
+        # Only program/gui/selftest open the panel.  For the others, say which
+        # backend would be used rather than a bare "none", which reads like a
+        # fault when it only means "this command did not touch the GPIO".
+        if self.io is not None:
+            io_backend = self.io.backend.name
+            gpio_simulated = self.io.simulated
+        else:
+            probed = available_backend()
+            io_backend = f"{probed} (not opened by this command)"
+            gpio_simulated = probed == "simulated"
         return {
             "station_id": self.config.station_id,
             "config": self.config.source_path or "built-in defaults",
@@ -104,7 +114,7 @@ class StationApp:
             "avrdude_available": self.backend.is_available(),
             "avrdude_version": self.backend.version() if self.backend.is_available() else "",
             "gpio_backend": io_backend,
-            "simulated": self.simulate or io_backend == "simulated",
+            "simulated": self.simulate or gpio_simulated,
             "projects": len(self.db.list_projects()),
             "users": len(self.db.list_users()),
             "backup": self.backup.status(),

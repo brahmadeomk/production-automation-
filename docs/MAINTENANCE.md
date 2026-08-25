@@ -151,13 +151,34 @@ sudo fuser -v /dev/gpiochip0
 
 ### 4.2 Checking which backend is live
 
+`status` does **not** open the panel — only `program`, `gui` and `selftest` do.
+It is safe to run during production and reports which backend *would* be used:
+
 ```bash
 sudo -u progstation /opt/progstation/venv/bin/progstation status
 ```
 
-`gpio_backend` must read `lgpio` or `gpiozero` on a real station. If it reads
-`simulated` there, the station is not programming anything — treat it as a
-stop-the-line fault.
+```
+gpio_backend      : lgpio (not opened by this command)
+simulated         : False
+```
+
+The suffix is normal. `simulated: False` with a named backend is a healthy
+station. `simulated: True` on a real station means it is not programming
+anything — treat that as a stop-the-line fault.
+
+To actually exercise the GPIO, LEDs and buzzer, run the self-test **without**
+`--simulate`:
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation selftest --outputs
+```
+
+That opens the real panel, blinks both LEDs, sounds the buzzer, and reports the
+fixture-detect state. It is the only command that proves the wiring.
+
+> `status` deliberately avoids claiming pins: GPIO25 is the target's RESET line,
+> and grabbing it mid-cycle could disturb a board being programmed.
 
 To run without hardware on purpose (training, bench work), pass `--simulate`,
 which simulates the programmer *and* the panel, or set `gpio.backend: simulated`

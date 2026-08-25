@@ -239,3 +239,38 @@ def test_lgpio_work_dir_is_writable():
 
     work_dir = _lgpio_work_dir()
     assert os.path.isdir(work_dir) and os.access(work_dir, os.W_OK)
+
+
+def test_status_names_the_backend_it_would_use(tmp_path):
+    """`status` does not open the panel, but must not report a bare "none".
+
+    Reporting "none" reads like a fault when it only means this command did not
+    touch the GPIO.
+    """
+    from progstation.app import StationApp
+    from progstation.config import StationConfig
+
+    cfg = StationConfig(data_dir=str(tmp_path), log_dir=str(tmp_path / "log"))
+    cfg.database.path = str(tmp_path / "p.db")
+    cfg.reports.export_dir = str(tmp_path / "exports")
+
+    app = StationApp(cfg, with_io=False)          # what `status` builds
+    try:
+        health = app.health()
+        assert health["gpio_backend"] != "none"
+        assert "not opened" in health["gpio_backend"]
+        assert health["gpio_backend"].split()[0] in ("lgpio", "gpiozero", "simulated", "unavailable")
+    finally:
+        app.close()
+
+
+def test_available_backend_claims_no_pins(monkeypatch):
+    """Probing for status must never claim a pin -- GPIO25 is RESET."""
+    from progstation.hw import gpio as gpio_module
+
+    def must_not_be_called(*args, **kwargs):
+        raise AssertionError("status probing must not construct a GPIO backend")
+
+    monkeypatch.setattr(gpio_module, "LgpioBackend", must_not_be_called)
+    monkeypatch.setattr(gpio_module, "GpiozeroBackend", must_not_be_called)
+    assert gpio_module.available_backend() in ("lgpio", "gpiozero", "simulated", "unavailable")

@@ -15,6 +15,7 @@ Three backends are supported, probed in this order when ``backend: auto``:
 from __future__ import annotations
 
 import glob
+import importlib
 import logging
 import os
 import tempfile
@@ -179,6 +180,25 @@ class GpiozeroBackend(GpioBackend):  # pragma: no cover - requires hardware
             except Exception:
                 pass
         self._devices.clear()
+
+
+def available_backend() -> str:
+    """Name the backend that would be selected, without claiming any pin.
+
+    ``status`` may be run while production is live, and GPIO25 is the target's
+    RESET line -- claiming it mid-cycle could disturb programming.  So this
+    reports what *would* be used based on hardware and driver availability
+    only.  Use ``selftest`` when you need the panel actually exercised.
+    """
+    if not gpio_hardware_present():
+        return "simulated"
+    for label in ("lgpio", "gpiozero"):
+        try:
+            importlib.import_module(label)
+            return label
+        except ImportError:
+            continue
+    return "unavailable"
 
 
 def _probe(backend: GpioBackend, pin: int) -> None:
