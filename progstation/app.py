@@ -57,6 +57,12 @@ class StationApp:
         self.config = config or load_config()
         self.config.ensure_directories()
         self.simulate = simulate
+        if simulate:
+            # --simulate means "no hardware required", so it has to cover the
+            # panel as well as the programmer.  Without this the station still
+            # tries to claim real GPIO and fails on a machine that has pins but
+            # no permission to drive them.
+            self.config.gpio.backend = "simulated"
 
         self.db = Database(self.config.database.path, self.config.database.busy_timeout_s)
         self.auth = AuthManager(self.db, self.config.security)

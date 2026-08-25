@@ -14,15 +14,41 @@ Three backends are supported, probed in this order when ``backend: auto``:
 
 from __future__ import annotations
 
+import glob
 import logging
+import os
+import tempfile
 import threading
 import time
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
 HIGH = 1
 LOW = 0
+
+
+class GpioUnavailableError(RuntimeError):
+    """Real GPIO hardware exists but no backend could drive it."""
+
+
+def gpio_hardware_present() -> bool:
+    """True when the kernel exposes GPIO character devices.
+
+    This separates "no hardware, so simulation is correct" from "real hardware
+    we failed to claim", which must never be silently simulated.
+    """
+    return bool(glob.glob("/dev/gpiochip*"))
+
+
+def _lgpio_work_dir() -> str:
+    """A directory lgpio can always write its notification FIFO into."""
+    for candidate in ("/var/lib/progstation", "/run/progstation"):
+        path = Path(candidate)
+        if path.is_dir() and os.access(path, os.W_OK):
+            return str(path)
+    return tempfile.gettempdir()
 
 
 class GpioBackend:
@@ -81,7 +107,15 @@ class SimulatedBackend(GpioBackend):
 class LgpioBackend(GpioBackend):  # pragma: no cover - requires hardware
     name = "lgpio"
 
-    def __init__(self, chip: int = 0):
+    def __init__(self, chip: int = 0, work_dir: Optional[str] = None):
+        # lgpio drops a notification FIFO (.lgd-nfy*) into its working
+        # directory, which defaults to the *current* directory.  Starting the
+        # station from a directory its service account cannot write -- a
+        # developer checkout, say -- makes gpiochip_open fail with a permission
+        # error that looks nothing like a GPIO problem.  Pin the working
+        # directory somewhere always writable instead.
+        os.environ.setdefault("LG_WD", work_dir or _lgpio_work_dir())
+
         import lgpio
 
         self._lgpio = lgpio
@@ -147,8 +181,29 @@ class GpiozeroBackend(GpioBackend):  # pragma: no cover - requires hardware
         self._devices.clear()
 
 
-def create_backend(name: str = "auto", chip: int = 0) -> GpioBackend:
-    """Instantiate a backend, falling back to simulation when hardware is absent."""
+def _probe(backend: GpioBackend, pin: int) -> None:
+    """Claim and release one pin to prove the backend actually works.
+
+    Constructing a backend is not proof: ``gpiozero`` imports cleanly and only
+    fails later, when a device is created and its pin factory turns out to be
+    unusable.  Probing here keeps that failure inside the fallback logic
+    instead of letting it escape into the first programming cycle.
+    """
+    backend.setup_input(pin, pull_up=True)
+    backend.read(pin)
+
+
+def create_backend(
+    name: str = "auto", chip: int = 0, *, probe_pin: int = 25
+) -> GpioBackend:
+    """Instantiate a GPIO backend.
+
+    With ``auto`` the backends are probed in order, and the simulated backend is
+    used only when the machine has no GPIO hardware at all.  On a station that
+    *does* have GPIO, a backend that cannot be claimed raises instead of quietly
+    simulating -- a simulated station would report PASS without programming
+    anything, which is far worse than refusing to start.
+    """
     name = (name or "auto").lower()
     if name == "simulated":
         return SimulatedBackend()
@@ -159,14 +214,38 @@ def create_backend(name: str = "auto", chip: int = 0) -> GpioBackend:
     if name != "auto":
         raise ValueError(f"unknown GPIO backend '{name}'")
 
+    failures: List[str] = []
     for factory, label in ((lambda: LgpioBackend(chip), "lgpio"), (GpiozeroBackend, "gpiozero")):
+        backend = None
         try:
             backend = factory()
+            _probe(backend, probe_pin)
+            backend.close()
+            backend = factory()  # fresh handle, with the probe pin released
             log.info("GPIO backend: %s", label)
             return backend
-        except Exception as exc:  # ImportError off-Pi, OSError without permissions
+        except Exception as exc:  # ImportError off-Pi, OSError without permission
+            failures.append(f"{label}: {type(exc).__name__}: {exc}")
             log.debug("GPIO backend %s unavailable: %s", label, exc)
-    log.warning("No GPIO hardware available - running with the simulated backend")
+            if backend is not None:
+                try:
+                    backend.close()
+                except Exception:
+                    pass
+
+    if gpio_hardware_present():
+        raise GpioUnavailableError(
+            "GPIO hardware is present but no backend could claim it:\n  "
+            + "\n  ".join(failures)
+            + "\n\nRefusing to continue: a simulated backend would report PASS"
+            " without programming anything."
+            "\nCheck that this account is in the 'gpio' group, that LG_WD points"
+            " at a writable directory, and that no other process holds the pins."
+            "\nTo run deliberately without hardware, pass --simulate or set"
+            " gpio.backend: simulated in station.yaml."
+        )
+
+    log.warning("No GPIO hardware on this machine - using the simulated backend")
     return SimulatedBackend()
 
 

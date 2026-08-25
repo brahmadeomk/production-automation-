@@ -40,8 +40,9 @@ sudo -u progstation /opt/progstation/venv/bin/progstation selftest --outputs
 backup. `selftest --outputs` additionally blinks the LEDs and sounds the buzzer.
 
 > **If `status` reports `gpio_backend: simulated` on a real station, it is not
-> programming anything.** The station fell back to simulation because the GPIO
-> driver was unavailable — see section 4.
+> programming anything.** A station with GPIO now refuses to start rather than
+> simulating, so seeing this means it was started with `--simulate` or has
+> `gpio.backend: simulated` in its configuration — see section 4.
 
 ---
 
@@ -92,26 +93,75 @@ fuse settings on a sacrificial board before releasing a project.
 
 ---
 
-## 4. GPIO backend fell back to simulation
+## 4. GPIO backend problems
 
-The station probes `lgpio`, then `gpiozero`, then falls back to simulation so it
-still starts. Diagnose:
+The station probes `lgpio`, then `gpiozero`. Each candidate is **proved** by
+claiming and releasing a pin, not merely imported — `gpiozero` imports cleanly
+and only collapses later when its pin factory turns out to be unusable.
+
+What happens when none works depends on the machine:
+
+| Machine | Behaviour |
+|---|---|
+| No `/dev/gpiochip*` (a developer laptop) | Falls back to the simulated backend with a warning |
+| GPIO present but unclaimable (a real station) | **Refuses to start**, raising `GpioUnavailableError` |
+
+That second row is deliberate. A station running simulated would show PASS
+while programming nothing, and stamp serial numbers onto boards that never
+received firmware. Refusing to start is the safer failure.
+
+### 4.1 `GpioUnavailableError` at startup
+
+The message lists what each backend reported. The usual causes:
+
+**Permission denied / not in the `gpio` group**
 
 ```bash
-sudo -u progstation /opt/progstation/venv/bin/python -c "import lgpio; print(lgpio.gpiochip_open(0))"
+id progstation                 # must list the gpio group
+sudo usermod -aG gpio progstation
+sudo systemctl restart progstation
 ```
 
-- `ModuleNotFoundError` → `/opt/progstation/venv/bin/pip install lgpio`
-- Permission error → the service account is not in the `gpio` group:
-  ```bash
-  sudo usermod -aG gpio progstation && sudo systemctl restart progstation
-  ```
-- Device busy → another process holds the pins. `sudo fuser -v /dev/gpiochip0`
+**`lguGetWorkDir: can't set working directory` or `xCreatePipe: Can't set permissions ... .lgd-nfy0`**
 
-Force a backend by setting `gpio.backend: lgpio` in `station.yaml`; the station
-will then fail loudly instead of falling back silently.
+`lgpio` writes a notification FIFO into its working directory. The station pins
+that to `LG_WD` (defaulting to `/var/lib/progstation`), but if you launch it by
+hand from a directory the service account cannot write, an inherited `LG_WD`
+or an old build may still land there. Force it:
 
----
+```bash
+sudo -u progstation LG_WD=/var/lib/progstation \
+     /opt/progstation/venv/bin/progstation status
+```
+
+**`FileNotFoundError: /sys/class/gpio/gpio23/value`**
+
+`gpiozero` fell through to its NativeFactory, which uses the legacy sysfs GPIO
+interface removed from current kernels. Install a working pin factory:
+
+```bash
+sudo /opt/progstation/venv/bin/pip install lgpio
+```
+
+**Device busy** — another process holds the pins:
+
+```bash
+sudo fuser -v /dev/gpiochip0
+```
+
+### 4.2 Checking which backend is live
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation status
+```
+
+`gpio_backend` must read `lgpio` or `gpiozero` on a real station. If it reads
+`simulated` there, the station is not programming anything — treat it as a
+stop-the-line fault.
+
+To run without hardware on purpose (training, bench work), pass `--simulate`,
+which simulates the programmer *and* the panel, or set `gpio.backend: simulated`
+in `station.yaml`.
 
 ## 5. Serial numbers
 

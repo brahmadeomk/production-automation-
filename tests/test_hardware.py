@@ -1,5 +1,7 @@
 """Panel IO and the avrdude command builder."""
 
+import os
+
 import pytest
 
 from progstation.config import AvrdudeConfig, GpioConfig
@@ -157,3 +159,83 @@ def test_missing_binary_is_reported_not_raised():
     backend = AvrdudeBackend(AvrdudeConfig(binary="/nonexistent/avrdude"))
     result = backend.program_flash("atmega328p", "/tmp/x.hex")
     assert not result.ok and result.returncode == 127
+
+
+# -------------------------------------------------- backend selection safety
+def test_simulate_flag_also_simulates_gpio(tmp_path):
+    """--simulate must need no hardware at all, panel included."""
+    from progstation.app import StationApp
+    from progstation.config import StationConfig
+
+    cfg = StationConfig(data_dir=str(tmp_path), log_dir=str(tmp_path / "log"))
+    cfg.database.path = str(tmp_path / "p.db")
+    cfg.reports.export_dir = str(tmp_path / "exports")
+    cfg.gpio.backend = "lgpio"          # would need real hardware
+    app = StationApp(cfg, simulate=True)
+    try:
+        assert app.io is not None and app.io.simulated
+        assert app.health()["gpio_backend"] == "simulated"
+    finally:
+        app.close()
+
+
+def test_backend_is_probed_not_just_constructed(monkeypatch):
+    """A backend that imports fine but cannot claim a pin must be rejected.
+
+    This is the gpiozero failure mode: the constructor succeeds and the pin
+    factory only collapses later, when a device is created.
+    """
+    from progstation.hw import gpio as gpio_module
+
+    class ImportsButCannotClaim(gpio_module.GpioBackend):
+        name = "broken"
+
+        def setup_input(self, pin, pull_up=True):
+            raise FileNotFoundError("/sys/class/gpio/gpio23/value")
+
+        def setup_output(self, pin, initial=gpio_module.LOW):
+            raise FileNotFoundError("/sys/class/gpio/gpio23/value")
+
+        def read(self, pin):
+            return gpio_module.LOW
+
+        def write(self, pin, value):
+            pass
+
+    monkeypatch.setattr(gpio_module, "LgpioBackend", lambda chip=0: ImportsButCannotClaim())
+    monkeypatch.setattr(gpio_module, "GpiozeroBackend", ImportsButCannotClaim)
+    monkeypatch.setattr(gpio_module, "gpio_hardware_present", lambda: False)
+
+    # No hardware present, so falling back to simulation is the right answer --
+    # and crucially the FileNotFoundError does not escape.
+    assert isinstance(gpio_module.create_backend("auto"), gpio_module.SimulatedBackend)
+
+
+def test_real_hardware_that_cannot_be_claimed_raises(monkeypatch):
+    """Never simulate silently on a station that has GPIO.
+
+    A simulated station reports PASS while programming nothing, so refusing to
+    start is the safer failure.
+    """
+    from progstation.hw import gpio as gpio_module
+
+    def unavailable(*args, **kwargs):
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr(gpio_module, "LgpioBackend", unavailable)
+    monkeypatch.setattr(gpio_module, "GpiozeroBackend", unavailable)
+    monkeypatch.setattr(gpio_module, "gpio_hardware_present", lambda: True)
+
+    with pytest.raises(gpio_module.GpioUnavailableError) as excinfo:
+        gpio_module.create_backend("auto")
+    message = str(excinfo.value)
+    assert "gpio' group" in message          # names the usual cause
+    assert "--simulate" in message           # and the deliberate escape hatch
+
+
+def test_lgpio_work_dir_is_writable():
+    """lgpio writes a FIFO into LG_WD; it must never depend on the cwd."""
+    from progstation.hw.gpio import _lgpio_work_dir
+
+    work_dir = _lgpio_work_dir()
+    assert os.path.isdir(work_dir) and os.access(work_dir, os.W_OK)
