@@ -149,6 +149,7 @@ class BackupManager:
                             copied += item.stat().st_size
                             files += 1
 
+                self._restore_database_ownership()
                 pruned = self.prune()
                 detail = f"{files} file(s)"
                 if pruned:
@@ -176,6 +177,27 @@ class BackupManager:
                     detail=message,
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
+
+    def _restore_database_ownership(self) -> None:
+        """Undo root-owned SQLite sidecar files after a backup run as root.
+
+        A manual ``sudo progstation backup run`` opens the production database,
+        and in WAL mode that can create ``-wal``/``-shm`` files owned by root.
+        Left behind, they stop the station's own account from writing its
+        database.  Put them back to whoever owns the database file.
+        """
+        if os.geteuid() != 0:
+            return
+        database = Path(self.db.path)
+        if not database.exists():
+            return
+        try:
+            stat = database.stat()
+            for sidecar in (database, Path(f"{database}-wal"), Path(f"{database}-shm")):
+                if sidecar.exists():
+                    os.chown(sidecar, stat.st_uid, stat.st_gid)
+        except OSError as exc:  # pragma: no cover - best effort
+            log.warning("could not restore database ownership: %s", exc)
 
     def prune(self) -> int:
         """Delete backup folders older than ``keep_days``.  Returns the count."""

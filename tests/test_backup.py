@@ -76,3 +76,31 @@ def test_status_strings(db, share, tmp_path):
     assert "never run" in manager.status()
     manager.run_backup()
     assert "PASS" in manager.status()
+
+
+def test_backup_does_not_leave_root_owned_database_sidecars(db, project, share, tmp_path, monkeypatch):
+    """A backup run as root must not lock the station out of its own database.
+
+    In WAL mode root would create -wal/-shm owned by root; the station account
+    could then no longer write the production log.
+    """
+    chowned = []
+    monkeypatch.setattr("progstation.backup.smb.os.geteuid", lambda: 0)
+    monkeypatch.setattr("progstation.backup.smb.os.chown",
+                        lambda path, uid, gid: chowned.append(str(path)))
+
+    manager = _manager(db, share, tmp_path)
+    manager.db.path = str(tmp_path / "prod.db")
+    (tmp_path / "prod.db").write_bytes(b"")
+    result = manager.run_backup()
+
+    assert result.ok, result.detail
+    assert any(name.endswith("prod.db") for name in chowned)
+
+
+def test_ownership_guard_is_a_no_op_for_a_normal_user(db, project, share, tmp_path, monkeypatch):
+    """Nothing is chowned when the backup runs unprivileged, as the timer does."""
+    monkeypatch.setattr("progstation.backup.smb.os.geteuid", lambda: 1000)
+    monkeypatch.setattr("progstation.backup.smb.os.chown",
+                        lambda *a: (_ for _ in ()).throw(AssertionError("must not chown")))
+    assert _manager(db, share, tmp_path).run_backup().ok

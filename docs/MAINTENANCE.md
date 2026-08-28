@@ -237,7 +237,60 @@ Backup failures are logged to `BackupLog` and shown in the status bar. **They
 never stop production** — a station that cannot reach the file server keeps
 programming and recording locally.
 
-### 6.2 Backup share will not mount
+### 6.2 Enabling backup
+
+The share must be mounted **outside** the station: the backup timer runs as the
+`progstation` account, not root, so a backup job can never leave root-owned
+SQLite sidecar files that lock the station out of its own database.
+
+1. Credentials, root-owned and unreadable by anyone else:
+
+   ```bash
+   sudo install -m 600 /dev/null /etc/progstation/smb-credentials
+   sudo tee /etc/progstation/smb-credentials >/dev/null <<'EOF'
+   username=svc_progstation
+   password=<the password>
+   domain=WORKGROUP
+   EOF
+   ```
+
+2. Mount from `/etc/fstab` so it survives a reboot:
+
+   ```
+   //fileserver/production  /mnt/progstation-backup  cifs  credentials=/etc/progstation/smb-credentials,vers=3.0,uid=progstation,gid=progstation,file_mode=0640,dir_mode=0750,_netdev,nofail  0  0
+   ```
+
+   `nofail` matters: without it a file server that is down at boot stops the Pi
+   from booting, taking the line with it.
+
+   ```bash
+   sudo mkdir -p /mnt/progstation-backup
+   sudo systemctl daemon-reload && sudo mount -a
+   ```
+
+3. In `station.yaml`:
+
+   ```yaml
+   backup:
+     enabled: true
+     manage_mount: false          # fstab owns the mount
+     mount_point: /mnt/progstation-backup
+     interval_minutes: 1440
+     keep_days: 90
+   ```
+
+4. Prove it, then enable the timer:
+
+   ```bash
+   sudo -u progstation /opt/progstation/venv/bin/progstation backup run
+   sudo systemctl enable --now progstation-backup.timer
+   systemctl list-timers progstation-backup.timer
+   ```
+
+Run it as `progstation`, not with `sudo` — that is exactly how the timer runs it,
+so a success proves the scheduled job will work too.
+
+### 6.3 Backup share will not mount
 
 ```bash
 sudo mount -t cifs //fileserver/production /mnt/progstation-backup \
@@ -250,7 +303,7 @@ sudo mount -t cifs //fileserver/production /mnt/progstation-backup \
   in `backup.mount_options`.
 - Mounted by `/etc/fstab` instead? Set `backup.manage_mount: false`.
 
-### 6.3 Restore
+### 6.4 Restore
 
 ```bash
 sudo systemctl stop progstation
@@ -265,7 +318,7 @@ sudo systemctl start progstation
 Keep the `.bad` copy: records created after the backup live only there, and can
 be recovered by an engineer with SQLite.
 
-### 6.4 Integrity check
+### 6.5 Integrity check
 
 ```bash
 sudo -u progstation sqlite3 /var/lib/progstation/progstation.db "PRAGMA integrity_check;"
