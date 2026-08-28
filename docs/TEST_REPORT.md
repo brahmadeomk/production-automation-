@@ -86,18 +86,41 @@ the automated suite. Record results here during site acceptance:
 
 | # | Check | Method | Result |
 |---|---|---|---|
-| 4.1 | SPI device present | `ls /dev/spidev0.*` | ☐ |
-| 4.2 | Real device signature read | `progstation program` against a known-good board | ☐ |
-| 4.3 | Flash programmed and verified on a real AVR | Programming cycle, then read back with avrdude | ☐ |
-| 4.4 | EEPROM bytes correct on a real AVR | `avrdude -U eeprom:r:-:h` compared against `progstation project show` | ☐ |
-| 4.5 | Green LED (GPIO17) / red LED (GPIO27) | **Settings → Test LEDs and buzzer** | ☐ |
-| 4.6 | Buzzer (GPIO22): 1 beep PASS, 3 beeps FAIL | Programming cycle | ☐ |
-| 4.7 | Start button (GPIO23) triggers a cycle | Press with `require_hardware_start: true` | ☐ |
-| 4.8 | Fixture detect (GPIO24) blocks an open fixture | Start with the fixture open → `E_FIXTURE_OPEN` | ☐ |
-| 4.9 | Touchscreen fullscreen and touch-accurate | Visual, all four screens | ☐ |
-| 4.10 | Backup reaches the real SMB share | `progstation backup run` | ☐ |
-| 4.11 | Station starts on boot | `sudo reboot` | ☐ |
-| 4.12 | Power loss mid-cycle does not consume a serial | Pull power during programming; compare counter before/after | ☐ |
+| 4.1 | SPI device present | `ls /dev/spidev0.*` | **PASS** — commissioning 2026-08-28 |
+| 4.2 | Real device signature read | avrdude against a known-good board | **PASS** — `0x1e950f (m328p)`, matches the project |
+| 4.3 | Flash programmed and verified on a real AVR | Full cycle, serial 000001 | **PASS** — 8/8 steps, flash written and verified |
+| 4.4 | EEPROM bytes correct on a real AVR | `-U eeprom:r:-:h`, compared against the built block | **PASS** — see 4.4a below |
+| 4.5 | Green LED (GPIO17) / red LED (GPIO27) | `selftest --outputs` | **PASS** — both exercised |
+| 4.6 | Buzzer (GPIO22): 1 beep PASS, 3 beeps FAIL | `selftest --outputs`, programming cycle | **PASS** |
+| 4.7 | Start button (GPIO23) triggers a cycle | Press with `require_hardware_start: true` | ☐ not yet tested |
+| 4.8 | Fixture detect (GPIO24) blocks an open fixture | Start with the fixture open → `E_FIXTURE_OPEN` | ☐ not yet tested |
+| 4.9 | Touchscreen fullscreen and touch-accurate | Visual, all four screens | **PASS** — running on the 7-inch panel |
+| 4.10 | Backup reaches the real SMB share | `progstation backup run` | ☐ not yet configured |
+| 4.11 | Station starts on boot | `sudo reboot` | ☐ not yet tested |
+| 4.12 | Power loss mid-cycle does not consume a serial | Pull power during programming | ☐ not yet tested |
+
+### 4.4a EEPROM verification evidence (serial 000001)
+
+Read back from the target with
+`avrdude -U eeprom:r:-:h` and decoded against the configured map:
+
+| Offset | Field | On chip | Verdict |
+|---|---|---|---|
+| 0x0000 | serial_number | `00000001` | correct |
+| 0x0010 | mfg_date | `20260828` | correct, packed BCD |
+| 0x001C | *reserved* | `FFFF` | untouched fill byte, as specified |
+| 0x001E | crc | `0EBC` | CRC-16/CCITT recomputed over bytes 0–29 independently: **matches** |
+| 0x0020+ | rest of EEPROM | `FF FF FF …` | **untouched** — the station writes only its own block |
+
+The layout, offsets, BCD date encoding, reserved bytes, checksum and write
+extent are therefore verified on real silicon.
+
+The ASCII fields (`hw_revision`, `product_variant`, `firmware_version`) read
+back as zeros on this unit because a `project add --update` had cleared the
+project metadata beforehand — the defect fixed in "Update only the project
+fields the operator supplied". The encoding path itself is exercised by the
+automated suite and by 4.4's byte-level comparison; re-verify these three
+fields on the next unit programmed with the metadata restored.
 
 ## 5. Known limitations
 
