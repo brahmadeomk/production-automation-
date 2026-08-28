@@ -142,6 +142,11 @@ Always press **Preview EEPROM block** before saving. It shows the exact bytes
 and decodes each field. The **Status** column on the Projects list must read
 `ready` before operators can run the product.
 
+> **Updating a project changes only the fields you supply.** From the CLI,
+> `project add --update` leaves every option you omit exactly as it was, and
+> prints a `changed:` line naming what it touched. Check that line: it is your
+> confirmation that nothing else moved.
+
 ### 5.2 Changing a serial counter
 
 **Settings → Projects → Set serial counter.** You are asked to confirm, and the

@@ -244,3 +244,61 @@ def test_doctor_json_output(station, capsys):
     assert payload[0]["ok"] is True
     assert payload[0]["signature"] == "0x1e950f"
     assert "gpiochip" in payload[0]["command"]
+
+
+def test_update_preserves_fields_that_were_not_supplied(station, capsys, tmp_path):
+    """An update must never blank product metadata.
+
+    Silently clearing HwRevision or FirmwareVersion stamps empty
+    manufacturing data into the EEPROM of every unit programmed afterwards --
+    the traceability record would be wrong, not merely missing.
+    """
+    station("project", "add", "--name", "TempSensor", "--update", "--mcu", "atmega328p")
+    capsys.readouterr()
+
+    station("project", "show", "TempSensor")
+    out = capsys.readouterr().out
+    assert "RevC" in out                       # HwRevision survived
+    assert "TS-100" in out                     # ProductVariant survived
+    assert "1.4.0" in out                      # FirmwareVersion survived
+    assert "0x1e950f" in out                   # Signature survived
+    assert "1000" in out                       # SerialStart survived
+
+
+def test_update_reports_only_what_it_changed(station, capsys):
+    station("project", "add", "--name", "TempSensor", "--update",
+            "--firmware-version", "2.0.0")
+    out = capsys.readouterr().out
+    assert "changed: FirmwareVersion" in out
+
+    capsys.readouterr()
+    station("project", "show", "TempSensor")
+    shown = capsys.readouterr().out
+    assert "2.0.0" in shown
+    assert "RevC" in shown                     # everything else untouched
+
+
+def test_update_records_the_changed_columns_in_the_audit_log(station, capsys):
+    station("project", "add", "--name", "TempSensor", "--update",
+            "--hw-revision", "RevD", "--actor", "eng")
+    capsys.readouterr()
+    station("audit", "--limit", "5")
+    out = capsys.readouterr().out
+    assert "project.update" in out and "HwRevision" in out
+
+
+def test_creating_a_project_still_requires_mcu_and_hex(station, capsys):
+    station("project", "add", "--name", "Incomplete", expect=1)
+    assert "--mcu" in capsys.readouterr().err
+
+
+def test_new_project_gets_documented_defaults(station, capsys, tmp_path):
+    firmware = tmp_path / "other.hex"
+    firmware.write_text(":00000001FF\n")
+    station("project", "add", "--name", "Bare", "--mcu", "atmega8",
+            "--hex", str(firmware))
+    capsys.readouterr()
+    station("project", "show", "Bare")
+    out = capsys.readouterr().out
+    assert "SerialStart     : 1" in out
+    assert "SerialDigits    : 6" in out

@@ -109,42 +109,93 @@ def _eeprom_map_from_args(args) -> Optional[dict]:
     return None
 
 
-def cmd_project_add(app: StationApp, args) -> int:
-    values = {
-        "ProjectName": args.name,
-        "MCU": args.mcu,
-        "HexPath": str(Path(args.hex).expanduser()),
-        "SNAddress": args.sn_address,
-        "MFGAddress": args.mfg_address,
-        "HwRevision": args.hw_revision,
-        "ProductVariant": args.variant,
-        "FirmwareVersion": args.firmware_version,
-        "SerialPrefix": args.serial_prefix,
-        "SerialStart": args.serial_start,
-        "SerialEnd": args.serial_end,
-        "SerialDigits": args.serial_digits,
-        "Signature": args.signature,
-        "FuseLow": args.fuse_low,
-        "FuseHigh": args.fuse_high,
-        "FuseExtended": args.fuse_extended,
-        "LockByte": args.lock_byte,
-    }
-    eeprom = _eeprom_map_from_args(args)
-    if eeprom:
-        values["EepromMap"] = eeprom
+#: Values applied when a project is first created.  On update, a field the
+#: user did not name is left exactly as it was -- silently blanking a HW
+#: revision or firmware version would stamp empty manufacturing data into
+#: every unit programmed afterwards.
+_PROJECT_CREATE_DEFAULTS = {
+    "SNAddress": 0,
+    "MFGAddress": 8,
+    "HwRevision": "",
+    "ProductVariant": "",
+    "FirmwareVersion": "",
+    "SerialPrefix": "",
+    "SerialStart": 1,
+    "SerialEnd": 999999,
+    "SerialDigits": 6,
+    "Signature": "",
+}
 
+#: Command line option -> database column.
+_PROJECT_ARG_COLUMNS = (
+    ("mcu", "MCU"),
+    ("signature", "Signature"),
+    ("sn_address", "SNAddress"),
+    ("mfg_address", "MFGAddress"),
+    ("hw_revision", "HwRevision"),
+    ("variant", "ProductVariant"),
+    ("firmware_version", "FirmwareVersion"),
+    ("serial_prefix", "SerialPrefix"),
+    ("serial_start", "SerialStart"),
+    ("serial_end", "SerialEnd"),
+    ("serial_digits", "SerialDigits"),
+    ("fuse_low", "FuseLow"),
+    ("fuse_high", "FuseHigh"),
+    ("fuse_extended", "FuseExtended"),
+    ("lock_byte", "LockByte"),
+)
+
+
+def cmd_project_add(app: StationApp, args) -> int:
     existing = app.db.get_project_by_name(args.name)
     if existing and not args.update:
         print(f"project '{args.name}' already exists (use --update)", file=sys.stderr)
         return EXIT_FAIL
+
+    # Only the options actually given are written.  Unset options carry None,
+    # so an update touches nothing the operator did not ask to change.
+    values = {"ProjectName": args.name}
+    for option, column in _PROJECT_ARG_COLUMNS:
+        supplied = getattr(args, option, None)
+        if supplied is not None:
+            values[column] = supplied
+    if args.hex is not None:
+        values["HexPath"] = str(Path(args.hex).expanduser())
+
+    eeprom = _eeprom_map_from_args(args)
+    if eeprom:
+        values["EepromMap"] = eeprom
+
+    if not existing:
+        missing_required = [
+            name for name, value in (("--mcu", args.mcu), ("--hex", args.hex))
+            if value is None
+        ]
+        if missing_required:
+            print(
+                f"a new project needs {' and '.join(missing_required)}",
+                file=sys.stderr,
+            )
+            return EXIT_FAIL
+        for column, default in _PROJECT_CREATE_DEFAULTS.items():
+            values.setdefault(column, default)
+
     project_id = app.db.upsert_project(
         values, project_id=int(existing["ProjectId"]) if existing else None
     )
-    app.db.audit(args.actor, "project.update" if existing else "project.create", args.name)
+    changed = ", ".join(sorted(k for k in values if k != "ProjectName"))
+    app.db.audit(
+        args.actor,
+        "project.update" if existing else "project.create",
+        args.name,
+        changed,
+    )
 
     project = app.db.get_project(project_id)
     problems = app.engine.validate_project(project)
     print(f"{'Updated' if existing else 'Created'} project '{args.name}' (id {project_id})")
+    if existing:
+        print(f"  changed: {changed or '(nothing)'}")
     for problem in problems:
         print(f"  warning: {problem}", file=sys.stderr)
     return EXIT_OK
@@ -577,24 +628,24 @@ def build_parser() -> argparse.ArgumentParser:
     add = project.add_parser("add", help="create or update a project",
                              parents=[actor_opt])
     add.add_argument("--name", required=True)
-    add.add_argument("--mcu", required=True, help="avrdude part id, e.g. atmega328p")
-    add.add_argument("--hex", required=True, help="path to the firmware .hex")
-    add.add_argument("--signature", default="", help="expected device signature, e.g. 0x1e950f")
-    add.add_argument("--sn-address", type=int, default=0, help="legacy serial address")
-    add.add_argument("--mfg-address", type=int, default=8, help="legacy mfg-date address")
+    add.add_argument("--mcu", help="avrdude part id, e.g. atmega328p")
+    add.add_argument("--hex", help="path to the firmware .hex")
+    add.add_argument("--signature", help="expected device signature, e.g. 0x1e950f")
+    add.add_argument("--sn-address", type=int, help="legacy serial address")
+    add.add_argument("--mfg-address", type=int, help="legacy mfg-date address")
     add.add_argument("--eeprom-map", help="JSON map, inline or a file path")
     add.add_argument(
         "--recommended-map",
         action="store_true",
         help="use the 32-byte manufacturing block from SRS section 8",
     )
-    add.add_argument("--hw-revision", default="")
-    add.add_argument("--variant", default="")
-    add.add_argument("--firmware-version", default="")
-    add.add_argument("--serial-prefix", default="")
-    add.add_argument("--serial-start", type=int, default=1)
-    add.add_argument("--serial-end", type=int, default=999999)
-    add.add_argument("--serial-digits", type=int, default=6)
+    add.add_argument("--hw-revision")
+    add.add_argument("--variant")
+    add.add_argument("--firmware-version")
+    add.add_argument("--serial-prefix")
+    add.add_argument("--serial-start", type=int)
+    add.add_argument("--serial-end", type=int)
+    add.add_argument("--serial-digits", type=int)
     add.add_argument("--fuse-low", default=None)
     add.add_argument("--fuse-high", default=None)
     add.add_argument("--fuse-extended", default=None)
