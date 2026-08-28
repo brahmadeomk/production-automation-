@@ -207,3 +207,60 @@ def test_a_genuinely_empty_fixture_is_still_no_device(engine, project, backend):
     result = engine.run_cycle(project, "op1")
     assert result.error_code == "E_NO_DEVICE"
     assert "fixture" in result.operator_hint.lower()
+
+
+# ------------------------------------------------ unreadable firmware handling
+def _lock_directory(path):
+    import os
+    os.chmod(path, 0o000)
+
+
+def test_unreadable_firmware_is_reported_not_raised(engine, db, project, tmp_path, monkeypatch):
+    """Path.is_file() propagates PermissionError; validation must not crash.
+
+    Firmware left in an operator's home directory is routinely unreadable by
+    the station's service account.
+    """
+    from pathlib import Path
+    import progstation.core.programmer as programmer_module
+
+    def deny(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "is_file", deny)
+    problems = programmer_module._firmware_problems(Path("/home/pi/Desktop/fw.hex"))
+    assert problems and "cannot be read" in problems[0]
+    assert "/var/lib/progstation/firmware" in problems[0]
+
+
+def test_validate_project_survives_an_unreadable_firmware(engine, project, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        Path, "is_file",
+        lambda self, *a, **k: (_ for _ in ()).throw(PermissionError(13, "Permission denied")),
+    )
+    problems = engine.validate_project(project)       # must not raise
+    assert any("cannot be read" in p for p in problems)
+
+
+def test_cycle_reports_unreadable_firmware_as_a_clean_failure(engine, project, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        Path, "is_file",
+        lambda self, *a, **k: (_ for _ in ()).throw(PermissionError(13, "Permission denied")),
+    )
+    result = engine.run_cycle(project, "op1")
+    assert result.error_code == "E_FIRMWARE_MISSING"
+    assert "cannot be read" in result.error_message
+
+
+def test_existing_but_unreadable_firmware_is_caught(engine, project, tmp_path, monkeypatch):
+    """A file that stats fine but cannot be opened must still be rejected."""
+    import progstation.core.programmer as programmer_module
+    from pathlib import Path
+
+    monkeypatch.setattr(programmer_module.os, "access", lambda p, mode: False)
+    problems = programmer_module._firmware_problems(Path(project["HexPath"]))
+    assert problems and "not readable by this account" in problems[0]

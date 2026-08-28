@@ -60,6 +60,10 @@ done
 # ------------------------------------------------------------ directories
 log "Creating directories"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$DATA_DIR" "$LOG_DIR" "$DATA_DIR/exports"
+# Firmware belongs somewhere the station account can read.  A .hex left in an
+# operator's home directory is unreadable by the service user and the project
+# will never program.
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0755 "$DATA_DIR/firmware"
 install -d -m 0755 "$CONFIG_DIR" "$PREFIX"
 
 # ------------------------------------------------------------ application

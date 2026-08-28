@@ -453,6 +453,18 @@ def cmd_doctor(app: StationApp, args) -> int:
 
     from .core.avrdude import classify_failure
 
+    # A station.yaml carried over from an older install can still point at an
+    # avrdude fragment that no longer exists; avrdude then fails for a reason
+    # that has nothing to do with the board in the fixture.
+    fragment = (app.config.avrdude.config_file or "").lstrip("+")
+    if fragment and not Path(fragment).is_file():
+        print(
+            f"WARNING: avrdude.config_file points at {fragment}, which does not"
+            " exist.\n         avrdude 7.x does not need it - set"
+            " `config_file: null` in station.yaml.",
+            file=sys.stderr,
+        )
+
     report = []
     for project in projects:
         mcu = project["MCU"]
@@ -466,6 +478,11 @@ def cmd_doctor(app: StationApp, args) -> int:
             print(f"  expected sig   : {project['Signature'] or '(none set)'}")
             for problem in app.engine.validate_project(project):
                 print(f"  issue          : {problem}")
+            if mcu != mcu.lower():
+                print(
+                    f"  NOTE           : avrdude part ids are lower case;"
+                    f" try '{mcu.lower()}'"
+                )
 
         result, signature = app.backend.read_signature(mcu)
         entry["signature"] = signature

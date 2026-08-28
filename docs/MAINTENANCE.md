@@ -96,13 +96,37 @@ avrdude -p atmega328p -c linuxspi \
 > full string from `gpio.reset` and `gpio.chip`, so you only set the pin once.
 > Check what it actually runs with `progstation --verbose program ...`.
 
-### 3.2 `E_SIGNATURE_MISMATCH`
+### 3.2 `E_FIRMWARE_MISSING` — "cannot be read" / "not readable by this account"
+
+The station runs as `progstation`, which cannot read another user's home
+directory. A `.hex` on the desktop (`/home/pi/Desktop/...`) will never program.
+Keep firmware in `/var/lib/progstation/firmware`, created by the installer:
+
+```bash
+sudo install -o progstation -g progstation -m 0644 \
+     /home/pi/Desktop/product.hex /var/lib/progstation/firmware/
+
+sudo -u progstation /opt/progstation/venv/bin/progstation \
+     project add --name "<project>" --update \
+     --hex /var/lib/progstation/firmware/product.hex --actor maintenance
+```
+
+Verify the account can actually read it:
+
+```bash
+sudo -u progstation head -c 64 /var/lib/progstation/firmware/product.hex
+```
+
+Storing firmware under the station also keeps it inside the scheduled backup,
+so the exact binary shipped with each serial number stays recoverable.
+
+### 3.3 `E_SIGNATURE_MISMATCH`
 
 The station read a valid signature that is not the one the project expects.
 Almost always the wrong product selected or the wrong board loaded. The error
 detail names both the expected and the found signature.
 
-### 3.3 Intermittent `E_FLASH_VERIFY` or `E_EEPROM_VERIFY`
+### 3.4 Intermittent `E_FLASH_VERIFY` or `E_EEPROM_VERIFY`
 
 Programming started, so the bus works — this is a marginal connection.
 
@@ -111,7 +135,7 @@ Programming started, so the bus works — this is a marginal connection.
 - Lower `avrdude.baudrate`.
 - Check the target's decoupling if a whole batch behaves this way.
 
-### 3.4 A board bricked after a fuse change
+### 3.5 A board bricked after a fuse change
 
 Setting the clock-source fuse to an external crystal the board does not have
 disables ISP. Recovery needs a high-voltage programmer. Prevent this by proving

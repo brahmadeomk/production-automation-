@@ -19,6 +19,7 @@ progress via a callback, which is how both the touchscreen and the CLI drive it.
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -52,6 +53,32 @@ from .ihex import write_hex
 from .serials import SerialManager, SerialReservation
 
 log = logging.getLogger(__name__)
+
+
+def _firmware_problems(hex_path: Path) -> List[str]:
+    """Why the firmware cannot be used, if it cannot.
+
+    ``Path.is_file()`` only swallows "does not exist" errors -- a permission
+    error propagates.  Firmware kept in an operator's home directory is
+    routinely unreadable by the station's service account, so probing it
+    naively crashes the caller instead of reporting a fixable problem.
+    """
+    try:
+        if not hex_path.is_file():
+            return [f"firmware file not found: {hex_path}"]
+    except OSError as exc:
+        return [
+            f"firmware file cannot be read: {hex_path}"
+            f" ({exc.strerror}) - keep firmware somewhere the station account"
+            f" can read, such as /var/lib/progstation/firmware"
+        ]
+    if not os.access(hex_path, os.R_OK):
+        return [
+            f"firmware file is not readable by this account: {hex_path}"
+            f" - keep firmware somewhere the station account can read,"
+            f" such as /var/lib/progstation/firmware"
+        ]
+    return []
 
 #: Ordered workflow steps, surfaced to the GUI progress bar.
 STEPS = (
@@ -123,11 +150,10 @@ class ProgrammingEngine:
         problems: List[str] = []
         if not project["MCU"]:
             problems.append("MCU is not set")
-        hex_path = Path(project["HexPath"] or "")
         if not project["HexPath"]:
             problems.append("firmware path is not set")
-        elif not hex_path.is_file():
-            problems.append(f"firmware file not found: {hex_path}")
+        else:
+            problems.extend(_firmware_problems(Path(project["HexPath"])))
         try:
             map_for_project(project).validate()
         except StationError as exc:
@@ -298,8 +324,9 @@ class ProgrammingEngine:
 
     def _step_flash(self, project: Any, report: ProgressCallback) -> None:
         hex_path = Path(project["HexPath"] or "")
-        if not hex_path.is_file():
-            raise FirmwareMissingError(f"firmware file not found: {hex_path}")
+        problems = _firmware_problems(hex_path)
+        if problems:
+            raise FirmwareMissingError(problems[0])
 
         report("flash", "", None)
         avr_result = self.backend.program_flash(project["MCU"], hex_path)
