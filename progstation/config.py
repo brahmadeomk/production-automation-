@@ -55,7 +55,17 @@ class GpioConfig:
 class AvrdudeConfig:
     binary: str = "avrdude"
     programmer: str = "linuxspi"
+    #: SPI device.  avrdude 7.x wants the reset line named in the port itself,
+    #: as ``/dev/spidevX.Y:/dev/gpiochipN[:resetno]``; a bare ``/dev/spidev0.0``
+    #: is the avrdude 6.x form and 7.x rejects it with "unknown port
+    #: specification".  Leave this as the plain device and let ``gpiochip`` and
+    #: ``reset_gpio`` below complete it -- the station appends them for you, so
+    #: the reset pin stays defined once, under ``gpio``.
     port: str = "/dev/spidev0.0"
+    #: GPIO character device holding the reset line (avrdude 7.x linuxspi).
+    gpiochip: str = "/dev/gpiochip0"
+    #: BCM pin driving the target's RESET.  Kept in step with ``gpio.reset``.
+    reset_gpio: int = 25
     #: SPI clock for ISP.  Must stay below F_CPU/4 of the target; 200 kHz is safe
     #: for a 1 MHz factory-fused AVR.
     baudrate: int = 200000
@@ -63,7 +73,9 @@ class AvrdudeConfig:
     #: Extra ``avrdude`` flags appended verbatim to every invocation.
     extra_args: List[str] = field(default_factory=list)
     timeout_s: int = 120
-    #: Path to a generated config fragment that pins the linuxspi reset line.
+    #: Optional extra avrdude config fragment.  Not needed on avrdude 7.x --
+    #: the reset line comes from the port -- but avrdude 6.x sites can point
+    #: this at a fragment carrying ``reset = <pin>;``.
     config_file: Optional[str] = None
     #: Disable avrdude's own safemode/auto-erase behaviour changes here if a
     #: legacy product needs it.

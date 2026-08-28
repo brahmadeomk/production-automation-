@@ -39,15 +39,22 @@ gpio:
 avrdude:
   binary: avrdude
   programmer: linuxspi
+  # avrdude 7.x (what Trixie ships) needs the reset line in the port string:
+  #     /dev/spidevX.Y:/dev/gpiochipN[:resetno]
+  # Leave this as the plain device -- the station appends the gpiochip and the
+  # reset pin from the `gpio` section below, so RESET stays defined once.
+  # A bare /dev/spidev0.0 on avrdude 6.x needs the reset in a config fragment
+  # instead; see avrdude.config_file.
   port: /dev/spidev0.0
   # SPI clock for ISP.  Must stay below F_CPU/4 of the target: 200 kHz is
   # safe for a factory-fused AVR running on its 1 MHz internal oscillator.
   baudrate: 200000
   bitclock: null
   timeout_s: 120
-  # Config fragment that pins the linuxspi reset line; written by install.sh.
-  # The leading '+' makes avrdude append it to its built-in configuration.
-  config_file: "+/etc/progstation/avrdude-linuxspi.conf"
+  # Not needed on avrdude 7.x -- the reset line comes from the port above.
+  # avrdude 6.x sites can point this at a fragment carrying `reset = 25;`
+  # (a leading '+' appends it to avrdude's built-in configuration).
+  config_file: null
   extra_args: []
 
 # ------------------------------------------------------------ database

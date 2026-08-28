@@ -12,7 +12,6 @@ station.
 |---|---|
 | `/opt/progstation` | Application and its virtual environment |
 | `/etc/progstation/station.yaml` | Station configuration |
-| `/etc/progstation/avrdude-linuxspi.conf` | avrdude fragment pinning RESET to GPIO25 |
 | `/etc/progstation/smb-credentials` | Backup share credentials (root, `chmod 600`) |
 | `/var/lib/progstation/progstation.db` | **Production database — the traceability record** |
 | `/var/lib/progstation/exports` | Generated XLSX files |
@@ -66,9 +65,16 @@ floating. In likelihood order:
 Reproduce outside the application to split hardware from software:
 
 ```bash
-avrdude -C +/etc/progstation/avrdude-linuxspi.conf \
-        -p atmega328p -c linuxspi -P /dev/spidev0.0 -b 200000 -v
+avrdude -p atmega328p -c linuxspi \
+        -P /dev/spidev0.0:/dev/gpiochip0:25 -b 125000 -v
 ```
+
+> **Port format.** avrdude 7.x takes the reset line *in the port*:
+> `/dev/spidevX.Y:/dev/gpiochipN[:resetno]`. A bare `/dev/spidev0.0` is the
+> avrdude 6.x form and 7.x rejects it with
+> `linuxspi_open() error: unknown port specification`. The station builds the
+> full string from `gpio.reset` and `gpio.chip`, so you only set the pin once.
+> Check what it actually runs with `progstation --verbose program ...`.
 
 ### 3.2 `E_SIGNATURE_MISMATCH`
 

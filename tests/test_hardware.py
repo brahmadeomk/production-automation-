@@ -80,9 +80,11 @@ def test_start_button_edge_is_debounced(io):
 
 # ------------------------------------------------------------------ avrdude
 def test_command_matches_the_linuxspi_isp_setup():
+    """The port must carry the gpiochip and reset pin for avrdude 7.x."""
     args = AvrdudeBackend(AvrdudeConfig()).base_args("atmega328p")
     assert args == [
-        "avrdude", "-p", "atmega328p", "-c", "linuxspi", "-P", "/dev/spidev0.0",
+        "avrdude", "-p", "atmega328p", "-c", "linuxspi",
+        "-P", "/dev/spidev0.0:/dev/gpiochip0:25",
         "-b", "200000",
     ]
 
@@ -274,3 +276,52 @@ def test_available_backend_claims_no_pins(monkeypatch):
     monkeypatch.setattr(gpio_module, "LgpioBackend", must_not_be_called)
     monkeypatch.setattr(gpio_module, "GpiozeroBackend", must_not_be_called)
     assert gpio_module.available_backend() in ("lgpio", "gpiozero", "simulated", "unavailable")
+
+
+# ------------------------------------------------- avrdude 7.x linuxspi port
+def test_linuxspi_port_carries_the_reset_line():
+    """avrdude 7.x rejects a bare /dev/spidev0.0 for linuxspi.
+
+    It wants /dev/spidevX.Y:/dev/gpiochipN[:resetno]; without the suffix it
+    fails with "unknown port specification" and nothing can be programmed.
+    """
+    backend = AvrdudeBackend(AvrdudeConfig())
+    assert backend.resolved_port() == "/dev/spidev0.0:/dev/gpiochip0:25"
+    assert "-P" in backend.base_args("atmega328p")
+    port = backend.base_args("atmega328p")[
+        backend.base_args("atmega328p").index("-P") + 1
+    ]
+    assert port.count(":") == 2
+
+
+def test_explicit_full_port_is_left_alone():
+    config = AvrdudeConfig(port="/dev/spidev0.1:/dev/gpiochip4:17")
+    assert AvrdudeBackend(config).resolved_port() == "/dev/spidev0.1:/dev/gpiochip4:17"
+
+
+def test_reset_pin_follows_the_gpio_configuration(tmp_path):
+    """The pin map lives under `gpio` (SRS section 5); avrdude must follow it."""
+    from progstation.app import StationApp
+    from progstation.config import StationConfig
+
+    cfg = StationConfig(data_dir=str(tmp_path), log_dir=str(tmp_path / "log"))
+    cfg.database.path = str(tmp_path / "p.db")
+    cfg.reports.export_dir = str(tmp_path / "exports")
+    cfg.gpio.reset = 22            # a station wired differently
+    cfg.gpio.chip = 4
+    app = StationApp(cfg, simulate=True, with_io=False)
+    try:
+        assert app.config.avrdude.reset_gpio == 22
+        assert app.config.avrdude.gpiochip == "/dev/gpiochip4"
+        assert AvrdudeBackend(app.config.avrdude).resolved_port().endswith(
+            ":/dev/gpiochip4:22"
+        )
+    finally:
+        app.close()
+
+
+def test_non_linuxspi_programmer_port_untouched():
+    """Only linuxspi takes the reset line in its port."""
+    for programmer, port in (("usbasp", "usb"), ("avrisp", "/dev/ttyUSB0")):
+        config = AvrdudeConfig(programmer=programmer, port=port)
+        assert AvrdudeBackend(config).resolved_port() == port

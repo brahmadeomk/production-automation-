@@ -70,6 +70,11 @@ class StationApp:
         self.serials = SerialManager(self.db)
         self.reports = ReportEngine(self.db, day_start_hour=self.config.reports.day_start_hour)
 
+        # SRS section 5 defines the pin map under `gpio`; keep avrdude's copy of
+        # the reset line in step so the two can never drift apart.
+        self.config.avrdude.reset_gpio = self.config.gpio.reset
+        self.config.avrdude.gpiochip = f"/dev/gpiochip{self.config.gpio.chip}"
+
         self.backend: AvrdudeBackend = (
             SimulatedAvrdude(self.config.avrdude)
             if simulate

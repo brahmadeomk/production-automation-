@@ -84,7 +84,10 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$PREFIX"
 
 # ---------------------------------------------------------- configuration
 log "Installing configuration"
-install -m 0644 "$SOURCE_DIR/deploy/avrdude-linuxspi.conf" "$CONFIG_DIR/avrdude-linuxspi.conf"
+# avrdude 7.x takes the reset line in the port string, so the old config
+# fragment is obsolete -- and redefining the programmer makes avrdude warn.
+rm -f "$CONFIG_DIR/avrdude-linuxspi.conf"
+
 if [[ -f "$CONFIG_DIR/station.yaml" ]]; then
     log "Keeping the existing $CONFIG_DIR/station.yaml"
     install -m 0644 "$SOURCE_DIR/config/station.yaml" "$CONFIG_DIR/station.yaml.new"

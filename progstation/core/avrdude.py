@@ -98,6 +98,21 @@ class AvrdudeBackend:
         return match.group(1) if match else "unknown"
 
     # ------------------------------------------------------------ invocation
+    def resolved_port(self) -> str:
+        """The port string avrdude actually needs.
+
+        avrdude 7.x's ``linuxspi`` driver takes the reset line in the port:
+        ``/dev/spidevX.Y:/dev/gpiochipN[:resetno]``.  A bare ``/dev/spidev0.0``
+        -- the avrdude 6.x form, and what a hand-written config usually says --
+        is rejected with "unknown port specification".  Complete it here so the
+        reset pin stays configured once, under ``gpio``.
+        """
+        cfg = self.config
+        port = cfg.port
+        if cfg.programmer == "linuxspi" and ":" not in port:
+            return f"{port}:{cfg.gpiochip}:{cfg.reset_gpio}"
+        return port
+
     def base_args(self, mcu: str) -> List[str]:
         cfg = self.config
         args = [cfg.binary]
@@ -107,7 +122,7 @@ class AvrdudeBackend:
             # linuxspi reset line) needs.  Callers wanting a full replacement
             # pass the path with no prefix.
             args += ["-C", cfg.config_file]
-        args += ["-p", mcu, "-c", cfg.programmer, "-P", cfg.port]
+        args += ["-p", mcu, "-c", cfg.programmer, "-P", self.resolved_port()]
         if cfg.programmer == "linuxspi" and cfg.baudrate:
             args += ["-b", str(cfg.baudrate)]
         if cfg.bitclock:
