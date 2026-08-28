@@ -194,7 +194,10 @@ progstation project serial TempSensor --set 5000 --actor "your.name"
 ```
 
 Both the GUI and the CLI write the change to `AuditLog` with the old and new
-values. `--actor` is what gets recorded — use a real name.
+values. `--actor` is what gets recorded — use a real name. It may be written
+either before the subcommand (`progstation --actor jane user passwd bob`) or
+after it (`progstation user passwd bob --actor jane`); the trailing form wins if
+you give both.
 
 **The counter only advances inside the same transaction that commits a PASS
 record.** A power loss mid-cycle therefore leaves the counter untouched: the

@@ -167,3 +167,38 @@ def test_user_management(station, capsys):
 def test_backup_status_when_disabled(station, capsys):
     station("backup", "status")
     assert "disabled" in capsys.readouterr().out
+
+
+def test_actor_accepted_before_or_after_the_subcommand(station, capsys, tmp_path):
+    """`--actor` is global, but typing it after the subcommand is natural.
+
+    Both positions must work, and both must reach the audit log.
+    """
+    station("user", "add", "jane", "--role", "operator",
+            "--password", "secret123", "--actor", "trailing.name")
+    station("--actor", "leading.name", "user", "passwd", "jane",
+            "--password", "othersecret")
+    capsys.readouterr()
+
+    station("audit", "--limit", "20")
+    out = capsys.readouterr().out
+    assert "trailing.name" in out
+    assert "leading.name" in out
+
+
+def test_trailing_actor_overrides_the_global_one(station, capsys):
+    """When given in both places, the subcommand's value wins."""
+    station("--actor", "global.name", "user", "add", "bob", "--role", "operator",
+            "--password", "secret123", "--actor", "specific.name")
+    capsys.readouterr()
+
+    station("audit", "--limit", "10")
+    out = capsys.readouterr().out
+    create_line = next(l for l in out.splitlines() if "user.create" in l and "bob" in l)
+    assert "specific.name" in create_line
+    assert "global.name" not in create_line
+
+
+def test_password_policy_rejects_a_short_password(station, capsys):
+    station("user", "passwd", "admin", "--password", "Mecha", expect=1)
+    assert "at least 6 characters" in capsys.readouterr().err

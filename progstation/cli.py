@@ -471,6 +471,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--actor", default="cli", help="name recorded in the audit log")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
+    # --actor is global, but writing it after the subcommand is the natural
+    # thing to type ("... user passwd admin --actor jane").  Offer it in both
+    # positions: SUPPRESS means the subcommand copy only lands in the namespace
+    # when actually given, so it overrides the global value without clobbering
+    # it with a default.
+    actor_opt = argparse.ArgumentParser(add_help=False)
+    actor_opt.add_argument("--actor", default=argparse.SUPPRESS,
+                           help="name recorded in the audit log")
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="show station health").set_defaults(func=cmd_status)
@@ -485,7 +495,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project.add_parser("list", help="list projects").set_defaults(func=cmd_project_list)
 
-    add = project.add_parser("add", help="create or update a project")
+    add = project.add_parser("add", help="create or update a project",
+                             parents=[actor_opt])
     add.add_argument("--name", required=True)
     add.add_argument("--mcu", required=True, help="avrdude part id, e.g. atmega328p")
     add.add_argument("--hex", required=True, help="path to the firmware .hex")
@@ -516,7 +527,8 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("name")
     show.set_defaults(func=cmd_project_show)
 
-    serial = project.add_parser("serial", help="read or set the serial counter")
+    serial = project.add_parser("serial", help="read or set the serial counter",
+                                parents=[actor_opt])
     serial.add_argument("name")
     serial.add_argument("--set", type=int, help="set the next serial number")
     serial.set_defaults(func=cmd_project_serial)
@@ -527,19 +539,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     user.add_parser("list", help="list users").set_defaults(func=cmd_user_list)
 
-    user_add = user.add_parser("add", help="create a user")
+    user_add = user.add_parser("add", help="create a user", parents=[actor_opt])
     user_add.add_argument("username")
     user_add.add_argument("--role", choices=ROLES, default="operator")
     user_add.add_argument("--full-name", default="")
     user_add.add_argument("--password", help="prompted for when omitted")
     user_add.set_defaults(func=cmd_user_add)
 
-    passwd = user.add_parser("passwd", help="change a password")
+    passwd = user.add_parser("passwd", help="change a password", parents=[actor_opt])
     passwd.add_argument("username")
     passwd.add_argument("--password")
     passwd.set_defaults(func=cmd_user_passwd)
 
-    user_set = user.add_parser("set", help="change role or activation")
+    user_set = user.add_parser("set", help="change role or activation",
+                               parents=[actor_opt])
     user_set.add_argument("username")
     user_set.add_argument("--role", choices=ROLES)
     user_set.add_argument(
@@ -548,7 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
     user_set.set_defaults(func=cmd_user_set)
 
     # programming
-    program = sub.add_parser("program", help="run a programming cycle")
+    program = sub.add_parser("program", help="run a programming cycle", parents=[actor_opt])
     program.add_argument("--project", required=True)
     program.add_argument("--operator", required=True)
     program.add_argument("--count", type=int, default=1, help="program N units in a row")
@@ -583,7 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
     trace.add_argument("serial")
     trace.set_defaults(func=cmd_trace)
 
-    backup = sub.add_parser("backup", help="network backup")
+    backup = sub.add_parser("backup", help="network backup", parents=[actor_opt])
     backup.add_argument("backup_action", choices=["run", "status"], nargs="?", default="run")
     backup.set_defaults(func=cmd_backup)
 
