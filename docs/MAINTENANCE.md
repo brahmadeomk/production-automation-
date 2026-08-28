@@ -62,6 +62,26 @@ floating. In likelihood order:
 5. **SPI clock too fast** — a factory-fused AVR runs at 1 MHz, so ISP must stay
    below 250 kHz. Lower `avrdude.baudrate` to `125000` and retry.
 
+**Start with `doctor`.** It prints the exact avrdude command the station runs,
+the configured part id, and the raw result — which separates a configuration
+fault from a genuine wiring problem in one step:
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation doctor
+```
+
+```
+Project : Impact Detection
+  MCU configured : 'atmega328p'
+  avrdude command: avrdude -p atmega328p -c linuxspi -P /dev/spidev0.0:/dev/gpiochip0:25 -b 200000
+  expected sig   : 0x1e950f
+  signature read : 0x1e950f (atmega328p)  OK
+```
+
+The MCU is printed quoted so a stray capital or trailing space is visible —
+`'ATmega328P'` is not a part id avrdude accepts, and a wrong one reports as a
+configuration fault rather than a missing board.
+
 Reproduce outside the application to split hardware from software:
 
 ```bash

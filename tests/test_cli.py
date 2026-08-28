@@ -202,3 +202,45 @@ def test_trailing_actor_overrides_the_global_one(station, capsys):
 def test_password_policy_rejects_a_short_password(station, capsys):
     station("user", "passwd", "admin", "--password", "Mecha", expect=1)
     assert "at least 6 characters" in capsys.readouterr().err
+
+
+def test_doctor_shows_the_real_command_and_mcu(station, capsys):
+    """`doctor` must surface the exact avrdude invocation and part id.
+
+    Without it, diagnosing a station means hand-running avrdude and guessing
+    what the application would have done differently.
+    """
+    station("doctor", "--project", "TempSensor")
+    out = capsys.readouterr().out
+    assert "avrdude" in out and "-c linuxspi" in out
+    assert "/dev/spidev0.0:/dev/gpiochip0:25" in out     # the avrdude 7.x form
+    assert "'atmega328p'" in out                         # quoted, so stray case shows
+    assert "0x1e950f" in out
+
+
+def test_doctor_reports_a_configuration_fault_plainly(station, capsys, tmp_path):
+    """A bad part id must be named as such, not blamed on the fixture."""
+    from progstation.core.avrdude import AvrdudeResult
+    import progstation.core.avrdude as avrdude_module
+
+    original = avrdude_module.SimulatedAvrdude.read_signature
+    avrdude_module.SimulatedAvrdude.read_signature = lambda self, mcu: (
+        AvrdudeResult(False, 1, "", f"AVR Part {mcu} not found"), ""
+    )
+    try:
+        station("doctor", "--project", "TempSensor", expect=1)
+        out = capsys.readouterr().out
+        assert "FAILED" in out and "part id" in out
+        assert "floating" not in out            # not misreported as a bus problem
+    finally:
+        avrdude_module.SimulatedAvrdude.read_signature = original
+
+
+def test_doctor_json_output(station, capsys):
+    import json
+
+    station("--json", "doctor")
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["ok"] is True
+    assert payload[0]["signature"] == "0x1e950f"
+    assert "gpiochip" in payload[0]["command"]

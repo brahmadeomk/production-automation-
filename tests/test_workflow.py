@@ -156,3 +156,54 @@ def test_legacy_project_without_map_still_programs(db, engine, firmware):
     result = engine.run_cycle(db.get_project(project_id), "op1", mfg_date=date(2026, 1, 2))
     assert result.ok
     assert result.eeprom_hex == "00000001FFFFFFFF20260102"
+
+
+# ------------------------------------- configuration faults vs a missing board
+def test_unusable_part_id_is_a_config_error_not_no_device(engine, project, backend):
+    """A wrong MCU id must not tell the operator to reseat the board.
+
+    avrdude returns no signature for a bad part id exactly as it does for an
+    empty fixture, so without classification the operator hunts hardware for a
+    fault only an administrator can fix.
+    """
+    from progstation.core.avrdude import AvrdudeResult
+
+    def bad_part(mcu):
+        return AvrdudeResult(False, 1, "", f"AVR Part {mcu} not found"), ""
+
+    backend.read_signature = bad_part
+    result = engine.run_cycle(project, "op1")
+    assert result.error_code == "E_CONFIG"
+    assert "part id" in result.error_message
+    assert "TestSensor" not in result.operator_hint          # not a fixture problem
+
+
+def test_bad_port_specification_is_a_config_error(engine, project, backend):
+    from progstation.core.avrdude import AvrdudeResult
+
+    backend.read_signature = lambda mcu: (
+        AvrdudeResult(False, 1, "", "linuxspi_open() error: unknown port specification"), ""
+    )
+    result = engine.run_cycle(project, "op1")
+    assert result.error_code == "E_CONFIG"
+    assert "/dev/spidev" in result.error_message
+
+
+def test_missing_avrdude_binary_is_a_config_error(engine, project, backend):
+    from progstation.core.avrdude import AvrdudeResult
+
+    backend.read_signature = lambda mcu: (AvrdudeResult(False, 127, "", "not found"), "")
+    result = engine.run_cycle(project, "op1")
+    assert result.error_code == "E_CONFIG"
+
+
+def test_a_genuinely_empty_fixture_is_still_no_device(engine, project, backend):
+    """A floating bus must keep reporting E_NO_DEVICE, pointing at the fixture."""
+    from progstation.core.avrdude import AvrdudeResult
+
+    backend.read_signature = lambda mcu: (
+        AvrdudeResult(False, 1, "", "Device signature = 0x000000"), ""
+    )
+    result = engine.run_cycle(project, "op1")
+    assert result.error_code == "E_NO_DEVICE"
+    assert "fixture" in result.operator_hint.lower()

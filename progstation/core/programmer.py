@@ -41,7 +41,12 @@ from ..errors import (
     StationError,
 )
 from ..hw.station_io import StationIO
-from .avrdude import AvrdudeBackend, signature_matches, signature_name
+from .avrdude import (
+    AvrdudeBackend,
+    classify_failure,
+    signature_matches,
+    signature_name,
+)
 from .eeprom import EepromMap, map_for_project
 from .ihex import write_hex
 from .serials import SerialManager, SerialReservation
@@ -253,6 +258,16 @@ class ProgrammingEngine:
         report("signature", "", None)
         avr_result, signature = self.backend.read_signature(project["MCU"])
         if not signature:
+            # An unusable part id, port or binary also yields no signature.
+            # Reporting that as "no device" would send the operator to the
+            # fixture for a fault only an administrator can fix.
+            cause = classify_failure(avr_result)
+            if cause:
+                raise ConfigurationError(
+                    f"cannot talk to the programmer: {cause}"
+                    f" (MCU '{project['MCU']}')",
+                    detail=avr_result.tail(),
+                )
             raise NoDeviceError(detail=avr_result.tail())
         expected = project["Signature"] or ""
         if expected and not signature_matches(expected, signature):

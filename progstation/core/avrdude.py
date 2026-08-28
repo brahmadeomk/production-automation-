@@ -233,6 +233,40 @@ def _normalise_fuse(value: str) -> str:
     return text
 
 
+#: Output patterns that mean avrdude never reached the target: the part id,
+#: port or binary is wrong.  These must not be reported as "no device", which
+#: sends an operator hunting the fixture for a configuration fault.
+_CONFIG_FAILURE_PATTERNS = (
+    ("unknown port specification", "the SPI port is not in the form /dev/spidevX.Y:/dev/gpiochipN[:reset]"),
+    ("unable to open programmer", "avrdude could not open the programmer on this port"),
+    ("cannot be found", "avrdude does not recognise the configured MCU part id"),
+    ("not found", "avrdude does not recognise the configured MCU part id"),
+    ("unknown part", "avrdude does not recognise the configured MCU part id"),
+    ("invalid part", "avrdude does not recognise the configured MCU part id"),
+    ("can't open config file", "the avrdude configuration file is missing"),
+    ("no such file or directory", "a device or file avrdude needs is missing"),
+    ("permission denied", "avrdude is not allowed to open the SPI device or GPIO"),
+    ("avrdude not found", "the avrdude executable is missing"),
+)
+
+
+def classify_failure(result: "AvrdudeResult") -> Optional[str]:
+    """Explain a failure that is configuration, not a missing board.
+
+    Returns a human-readable cause, or ``None`` when the failure looks like a
+    genuinely absent or unresponsive target.
+    """
+    if result.ok:
+        return None
+    if result.returncode == 127:
+        return "the avrdude executable is missing"
+    haystack = result.output.lower()
+    for needle, explanation in _CONFIG_FAILURE_PATTERNS:
+        if needle in haystack:
+            return explanation
+    return None
+
+
 def signature_name(signature: str) -> str:
     return KNOWN_SIGNATURES.get((signature or "").lower(), "")
 

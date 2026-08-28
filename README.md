@@ -71,6 +71,7 @@ usable from line automation and FAT/SAT scripts.
 | `progstation trace <serial>` | Full genealogy of one unit |
 | `progstation backup run \| status` | Network backup |
 | `progstation audit` | Security audit trail |
+| `progstation doctor` | Show the real avrdude command and probe the ISP bus |
 | `progstation selftest` | FAT/SAT acceptance checks |
 | `progstation gui` | Start the touchscreen application |
 

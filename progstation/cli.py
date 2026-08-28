@@ -434,6 +434,68 @@ def cmd_audit(app: StationApp, args) -> int:
     return EXIT_OK
 
 
+def cmd_doctor(app: StationApp, args) -> int:
+    """Show exactly what the station runs, and probe the ISP bus.
+
+    The point is to make a failing station self-diagnosing: the operator sees
+    the real avrdude command and its raw output instead of an error code.
+    """
+    projects = (
+        [app.db.get_project_by_name(args.project)] if args.project
+        else list(app.db.list_projects())
+    )
+    if args.project and not projects[0]:
+        print(f"unknown project '{args.project}'", file=sys.stderr)
+        return EXIT_FAIL
+    if not projects:
+        print("no projects configured", file=sys.stderr)
+        return EXIT_FAIL
+
+    from .core.avrdude import classify_failure
+
+    report = []
+    for project in projects:
+        mcu = project["MCU"]
+        command = " ".join(app.backend.base_args(mcu))
+        entry = {"project": project["ProjectName"], "mcu": mcu, "command": command}
+
+        if not args.json:
+            print(f"\nProject : {project['ProjectName']}")
+            print(f"  MCU configured : {mcu!r}")
+            print(f"  avrdude command: {command}")
+            print(f"  expected sig   : {project['Signature'] or '(none set)'}")
+            for problem in app.engine.validate_project(project):
+                print(f"  issue          : {problem}")
+
+        result, signature = app.backend.read_signature(mcu)
+        entry["signature"] = signature
+        entry["ok"] = bool(signature)
+        cause = classify_failure(result)
+        entry["cause"] = cause or ""
+        if not args.json:
+            if signature:
+                from .core.avrdude import signature_name, signature_matches
+
+                name = signature_name(signature)
+                print(f"  signature read : {signature}{f' ({name})' if name else ''}  OK")
+                expected = project["Signature"] or ""
+                if expected and not signature_matches(expected, signature):
+                    print(f"  MISMATCH       : project expects {expected}")
+            elif cause:
+                print(f"  FAILED         : {cause}")
+                print(f"  avrdude said   : {result.tail(4)}")
+            else:
+                print("  FAILED         : no signature - ISP bus is floating")
+                print("                   check target power, fixture contacts,")
+                print("                   MISO/MOSI orientation and the level shifter")
+                print(f"  avrdude said   : {result.tail(4)}")
+        report.append(entry)
+
+    if args.json:
+        _emit(report, True)
+    return EXIT_OK if all(e["ok"] for e in report) else EXIT_FAIL
+
+
 def cmd_selftest(app: StationApp, args) -> int:
     """FAT/SAT helper (SRS section 19): exercise every subsystem and report."""
     from .selftest import run_selftest
@@ -609,6 +671,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--outputs", action="store_true", help="also blink the LEDs and sound the buzzer"
     )
     selftest.set_defaults(func=cmd_selftest)
+
+    doctor = sub.add_parser(
+        "doctor", help="show the real avrdude command and probe the ISP bus"
+    )
+    doctor.add_argument("--project", help="limit to one project")
+    doctor.set_defaults(func=cmd_doctor)
 
     gui = sub.add_parser("gui", help="start the touchscreen application")
     gui.add_argument("--windowed", action="store_true", help="do not go fullscreen")
