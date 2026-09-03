@@ -138,8 +138,14 @@ Programming started, so the bus works — this is a marginal connection.
 ### 3.5 A board bricked after a fuse change
 
 Setting the clock-source fuse to an external crystal the board does not have
-disables ISP. Recovery needs a high-voltage programmer. Prevent this by proving
-fuse settings on a sacrificial board before releasing a project.
+disables ISP. Prevent this by proving fuse settings on a sacrificial board
+before releasing a project — see section 7 of the user manual for worked
+ATmega328P values and the recovery table.
+
+A missing or faulty crystal is recoverable: feed a clock into XTAL1 from a
+signal generator or another MCU and ISP responds again. A programmed
+`RSTDISBL` or an unprogrammed `SPIEN` is not — those need a high-voltage
+programmer.
 
 ---
 

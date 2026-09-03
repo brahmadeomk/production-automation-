@@ -122,7 +122,7 @@ progstation project show TempSensor
 
 ## Documentation
 
-- [User manual](docs/USER_MANUAL.md) — operator and administrator guide
+- [User manual](docs/USER_MANUAL.md) — operator and administrator guide, including ATmega328P fuse settings (§7)
 - [Maintenance guide](docs/MAINTENANCE.md) — troubleshooting, backup, recovery
 - [Requirements traceability](docs/TRACEABILITY.md) — SRS section → implementation → test
 - [Test report](docs/TEST_REPORT.md) — verification results
