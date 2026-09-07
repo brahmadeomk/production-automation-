@@ -157,3 +157,53 @@ def test_kiosk_mode_is_frameless_and_on_top(qt_app, tmp_path):
         windowed.close()
     finally:
         app.close()
+
+
+# ------------------------------------------------------------------ scaling
+@pytest.mark.parametrize(
+    "screen_height, expected",
+    [(480, 1.00), (600, 1.25), (768, 1.60), (800, 1.60), (1080, 1.60), (0, 1.00)],
+)
+def test_ui_scale_matches_the_panel(screen_height, expected):
+    """Sizes are written for 800x480; larger panels grow, nothing shrinks."""
+    from progstation.gui.style import scale_for
+
+    assert scale_for(screen_height) == pytest.approx(expected, abs=0.01)
+
+
+def test_scaled_stylesheet_enlarges_metrics():
+    from progstation.gui.style import STYLESHEET, build_stylesheet
+
+    import re
+
+    def start_font(css):
+        return int(re.search(r"QPushButton#Start.*?font-size: (\d+)px", css, re.S).group(1))
+
+    base = start_font(STYLESHEET)
+    assert start_font(build_stylesheet(1.0)) == base
+    assert start_font(build_stylesheet(1.6)) > base
+
+
+def test_layout_fits_a_ten_inch_panel(qt_app, tmp_path):
+    """The 10-inch HDMI panels in use are 1024x600 and 1280x800."""
+    from progstation.gui.app import MainWindow
+    from progstation.gui.style import build_stylesheet, scale_for
+    from progstation.security.auth import Session
+
+    app = _station(tmp_path)
+    try:
+        for width, height in ((800, 480), (1024, 600), (1280, 800)):
+            qt_app.setStyleSheet(build_stylesheet(scale_for(height)))
+            window = MainWindow(app, Session(1, "admin", "A", "admin"), kiosk=True)
+            window.setGeometry(0, 0, width, height)
+            window.show()
+            minimum = window.minimumSizeHint()
+            assert minimum.width() <= width, (
+                f"{minimum.width()} px wide at scale for {width}x{height}"
+            )
+            assert minimum.height() <= height, (
+                f"{minimum.height()} px tall at scale for {width}x{height}"
+            )
+            window.close()
+    finally:
+        app.close()

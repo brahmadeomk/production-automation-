@@ -1,4 +1,4 @@
-"""Touch-optimised stylesheet for the 7-inch (800x480) panel.
+"""Touch-optimised stylesheet, scaled to the panel actually fitted.
 
 Everything is sized for a finger on a resistive/capacitive panel: minimum 48 px
 touch targets, high contrast for a lit shop floor, and PASS/FAIL colours that
@@ -110,3 +110,37 @@ QScrollBar::handle {{ background: #b6bcc6; border-radius: 8px; min-height: 40px;
 QTabBar::tab {{ padding: 12px 20px; font-size: 15px; }}
 QStatusBar {{ background: #e7eaee; font-size: 13px; }}
 """
+
+
+# --------------------------------------------------------------- scaling
+import re
+
+#: The stylesheet above is written for the smallest supported panel.
+_REFERENCE_HEIGHT = 480
+_METRIC_RE = re.compile(r"(font-size|min-height|min-width):\s*(\d+)px")
+
+
+def scale_for(screen_height: int) -> float:
+    """How much to enlarge the interface for the fitted display.
+
+    The sizes above suit a 7-inch 800x480 panel.  On a 10-inch screen those
+    same pixel sizes are physically similar but visually lost in the extra
+    space, so grow them with the panel.  Clamped: never shrink below the
+    designed size, and stop at 1.6 so a large monitor does not end up with
+    absurd controls.
+    """
+    if not screen_height:
+        return 1.0
+    return max(1.0, min(screen_height / _REFERENCE_HEIGHT, 1.6))
+
+
+def build_stylesheet(scale: float = 1.0) -> str:
+    """Return the stylesheet with its metrics scaled by *scale*."""
+    if abs(scale - 1.0) < 0.02:
+        return STYLESHEET
+
+    def resize(match: "re.Match") -> str:
+        prop, value = match.group(1), int(match.group(2))
+        return f"{prop}: {max(10, round(value * scale))}px"
+
+    return _METRIC_RE.sub(resize, STYLESHEET)

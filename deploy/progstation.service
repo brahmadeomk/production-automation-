@@ -13,10 +13,10 @@ SupplementaryGroups=gpio spi video render input
 
 WorkingDirectory=/opt/progstation
 Environment=PROGSTATION_CONFIG=/etc/progstation/station.yaml
-Environment=QT_QPA_PLATFORM=linuxfb
-Environment=QT_QPA_FB_DRM=1
-# Rotate/calibrate the 7-inch panel here if the vendor overlay does not.
-# Environment=QT_QPA_EGLFS_ROTATION=180
+# Display settings live here so a reinstall does not overwrite them, and so
+# the platform can be matched to the machine: a Pi running the desktop needs
+# xcb, a console-only station can use linuxfb.  See the file for the choices.
+EnvironmentFile=-/etc/progstation/display.env
 
 ExecStart=/opt/progstation/venv/bin/progstation gui --kiosk
 Restart=always

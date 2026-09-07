@@ -9,7 +9,7 @@ from typing import Optional
 from .. import APP_NAME, __version__
 from ..security.auth import Session
 from .qt import QtCore, QtWidgets, exec_app
-from .style import STYLESHEET
+from .style import build_stylesheet, scale_for
 
 log = logging.getLogger(__name__)
 
@@ -188,7 +188,15 @@ def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
     qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     qt_app.setApplicationName(APP_NAME)
     qt_app.setApplicationVersion(__version__)
-    qt_app.setStyleSheet(STYLESHEET)
+
+    # Grow the interface to suit the fitted panel.  The stylesheet is written
+    # for the smallest supported screen (800x480); on a 10-inch display those
+    # sizes are legible but lost in the extra space.
+    screen = qt_app.primaryScreen()
+    scale = scale_for(screen.geometry().height() if screen else 0)
+    qt_app.setStyleSheet(build_stylesheet(scale))
+    log.info("UI scale %.2f for a %s px high screen", scale,
+             screen.geometry().height() if screen else "unknown")
 
     password = app.bootstrap_admin()
     if password:

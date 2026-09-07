@@ -422,7 +422,58 @@ progstation backup run
 
 ---
 
-## 9. Touchscreen problems
+## 9. Display and touchscreen
+
+### 9.1 Choosing the Qt platform
+
+`/etc/progstation/display.env` decides how the station reaches the screen. The
+installer picks a default by looking for a desktop session; change it if the
+machine changes.
+
+| Setting | Use when | Note |
+|---|---|---|
+| `QT_QPA_PLATFORM=xcb` | The Raspberry Pi desktop is running (you can VNC in) | Also set `DISPLAY` and `XAUTHORITY` |
+| `QT_QPA_PLATFORM=linuxfb` | Console only, no desktop | Lightest; draws straight to the framebuffer |
+| `QT_QPA_PLATFORM=eglfs` | Console only, linuxfb shows nothing on HDMI | GPU accelerated |
+
+> **Do not use `linuxfb` while the desktop is running.** Both want the display,
+> and the result is a black screen or a flickering console. This is the usual
+> cause of "the service is active but nothing appears".
+
+```bash
+sudo nano /etc/progstation/display.env
+sudo systemctl restart progstation
+journalctl -u progstation -n 40 --no-pager
+```
+
+### 9.2 Autostarting inside the desktop
+
+On a Pi that boots to the desktop, running the station as a desktop
+application is simpler than driving X from a system service:
+
+```bash
+sudo usermod -aG progstation pi          # so the desktop user can read the data
+mkdir -p ~/.config/autostart
+cp /opt/progstation/deploy/progstation-kiosk.desktop ~/.config/autostart/
+sudo systemctl disable --now progstation # avoid two copies fighting for the screen
+```
+
+Log out and back in. Use either this **or** the systemd service, never both.
+
+### 9.3 Interface size
+
+The interface is written for the smallest supported panel (800x480) and scales
+up with the screen, to a limit of 1.6x. A 10-inch 1280x800 panel therefore gets
+noticeably larger text and buttons than a 7-inch one. The chosen factor is
+logged at startup:
+
+```bash
+journalctl -u progstation | grep "UI scale"
+```
+
+### 9.4 Common symptoms
+
+
 
 | Symptom | Fix |
 |---|---|

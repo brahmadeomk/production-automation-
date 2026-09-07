@@ -108,6 +108,21 @@ sudo -u "$SERVICE_USER" \
 
 # --------------------------------------------------------------- services
 log "Installing systemd units"
+if [[ -f "$CONFIG_DIR/display.env" ]]; then
+    log "Keeping the existing $CONFIG_DIR/display.env"
+else
+    install -m 0644 "$SOURCE_DIR/deploy/progstation.env" "$CONFIG_DIR/display.env"
+    # Default to whatever this machine actually is: a Pi running the desktop
+    # needs xcb, because linuxfb would fight the X server for the screen.
+    if ! systemctl is-active --quiet graphical.target 2>/dev/null \
+       && [[ ! -e /tmp/.X11-unix/X0 ]]; then
+        sed -i 's/^QT_QPA_PLATFORM=xcb/QT_QPA_PLATFORM=linuxfb/' "$CONFIG_DIR/display.env"
+        log "No desktop session detected - display.env set to linuxfb"
+    else
+        log "Desktop session detected - display.env set to xcb"
+    fi
+fi
+install -m 0644 "$SOURCE_DIR/deploy/progstation-kiosk.desktop" "$PREFIX/deploy/" 2>/dev/null || true
 install -m 0644 "$SOURCE_DIR/deploy/progstation.service"        /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.service" /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.timer"   /etc/systemd/system/
