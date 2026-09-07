@@ -38,7 +38,9 @@ class AdminScreen(QtWidgets.QWidget):
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(self._projects_tab(), "Projects")
         tabs.addTab(self._users_tab(), "Users")
-        tabs.addTab(self._system_tab(), "System")
+        # The System tab carries a long health list; on a 480 px panel it must
+        # scroll rather than force the whole window taller than the screen.
+        tabs.addTab(_scrollable(self._system_tab()), "System")
         tabs.addTab(self._audit_tab(), "Audit log")
         layout.addWidget(tabs)
 
@@ -335,6 +337,18 @@ class AdminScreen(QtWidgets.QWidget):
                 for r in self.app.db.list_audit(300)
             ]
         )
+
+
+def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+    """Wrap a tall page so it scrolls on a small panel."""
+    area = QtWidgets.QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(
+        QtWidgets.QFrame.Shape.NoFrame if hasattr(QtWidgets.QFrame, "Shape")
+        else QtWidgets.QFrame.NoFrame
+    )
+    area.setWidget(widget)
+    return area
 
 
 def _ask_password(parent, title: str) -> Optional[str]:

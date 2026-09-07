@@ -107,13 +107,13 @@ class MainScreen(QtWidgets.QWidget):
         self.status = QtWidgets.QLabel("READY")
         self.status.setObjectName("StatusIdle")
         self.status.setAlignment(ALIGN_CENTER)
-        self.status.setMinimumHeight(120)
+        self.status.setMinimumHeight(84)
         right.addWidget(self.status)
 
         self.message = QtWidgets.QLabel("Seat a board in the fixture and press START.")
         self.message.setAlignment(ALIGN_CENTER)
         self.message.setWordWrap(True)
-        self.message.setMinimumHeight(48)
+        self.message.setMinimumHeight(34)
         right.addWidget(self.message)
 
         self.progress = QtWidgets.QProgressBar()
@@ -124,7 +124,8 @@ class MainScreen(QtWidgets.QWidget):
 
         self.steps = QtWidgets.QPlainTextEdit()
         self.steps.setReadOnly(True)
-        self.steps.setMaximumHeight(150)
+        self.steps.setMinimumHeight(46)
+        self.steps.setMaximumHeight(120)
         right.addWidget(self.steps)
 
         self.start_button = QtWidgets.QPushButton("START")

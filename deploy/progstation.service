@@ -18,7 +18,7 @@ Environment=QT_QPA_FB_DRM=1
 # Rotate/calibrate the 7-inch panel here if the vendor overlay does not.
 # Environment=QT_QPA_EGLFS_ROTATION=180
 
-ExecStart=/opt/progstation/venv/bin/progstation gui
+ExecStart=/opt/progstation/venv/bin/progstation gui --kiosk
 Restart=always
 RestartSec=5
 

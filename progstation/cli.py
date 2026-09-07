@@ -582,7 +582,7 @@ def cmd_selftest(app: StationApp, args) -> int:
 def cmd_gui(app: StationApp, args) -> int:
     from .gui import run_gui
 
-    return run_gui(app, fullscreen=not args.windowed)
+    return run_gui(app, fullscreen=not args.windowed, kiosk=args.kiosk)
 
 
 # --------------------------------------------------------------------- parser
@@ -748,6 +748,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     gui = sub.add_parser("gui", help="start the touchscreen application")
     gui.add_argument("--windowed", action="store_true", help="do not go fullscreen")
+    gui.add_argument(
+        "--kiosk", action="store_true",
+        help="production mode: frameless, fullscreen, always on top",
+    )
     gui.set_defaults(func=cmd_gui)
 
     return parser

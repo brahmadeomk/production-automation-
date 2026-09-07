@@ -430,6 +430,8 @@ progstation backup run
 | Display rotated | Set `QT_QPA_EGLFS_ROTATION=180` in the unit, or fix the display overlay in `config.txt` |
 | Touch offset from the cursor | Calibrate the panel; check the vendor overlay in `/boot/firmware/config.txt` |
 | Falls back to a window | Expected under X/Wayland; `showFullScreen` still applies |
+| Window smaller than the panel | Start with `--kiosk` (frameless, fullscreen, always on top). The systemd unit already does |
+| Right-hand tabs cut off | The layout is sized for 800x480; a narrower panel will clip. Report the resolution |
 
 Test the GUI without the panel:
 

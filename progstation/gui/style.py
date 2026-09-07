@@ -38,10 +38,10 @@ QGroupBox::title {{
 }}
 QLabel#Title      {{ font-size: 22px; font-weight: 700; }}
 QLabel#Subtle     {{ color: {COLOR_MUTED}; font-size: 13px; }}
-QLabel#BigSerial  {{ font-size: 46px; font-weight: 700; letter-spacing: 2px; }}
-QLabel#StatusPass {{ background: {COLOR_PASS}; color: white; font-size: 40px;
+QLabel#BigSerial  {{ font-size: 40px; font-weight: 700; letter-spacing: 2px; }}
+QLabel#StatusPass {{ background: {COLOR_PASS}; color: white; font-size: 34px;
                      font-weight: 700; border-radius: 8px; padding: 14px; }}
-QLabel#StatusFail {{ background: {COLOR_FAIL}; color: white; font-size: 40px;
+QLabel#StatusFail {{ background: {COLOR_FAIL}; color: white; font-size: 34px;
                      font-weight: 700; border-radius: 8px; padding: 14px; }}
 QLabel#StatusBusy {{ background: {COLOR_BUSY}; color: white; font-size: 30px;
                      font-weight: 700; border-radius: 8px; padding: 14px; }}
@@ -64,26 +64,31 @@ QPushButton#Primary {{
 QPushButton#Primary:disabled {{ background: #a9c4f0; color: #f0f4fd; }}
 QPushButton#Start {{
     background: {COLOR_PASS}; color: white; border: none;
-    font-size: 26px; font-weight: 700; min-height: 84px;
+    /* Big enough to hit reliably with a gloved hand, small enough that the
+       whole production screen fits a 480 px panel. */
+    font-size: 24px; font-weight: 700; min-height: 58px;
 }}
 QPushButton#Start:disabled {{ background: #a6cdb2; color: #eef5f0; }}
 QPushButton#Danger {{ background: {COLOR_FAIL}; color: white; border: none; }}
 QPushButton#Nav {{
     background: transparent; border: none; border-bottom: 3px solid transparent;
-    border-radius: 0; font-size: 16px; padding: 12px 18px;
-    /* The checked state turns the label bold; reserve the width up front so
-       the text does not clip when a tab is selected. */
-    min-width: 108px;
+    border-radius: 0; font-size: 15px; padding: 12px 10px;
+    /* The checked state turns the label bold, so reserve a little width to
+       stop the text clipping -- but not so much that the four tabs plus the
+       user label overflow an 800 px panel. */
+    min-width: 88px;
 }}
 QPushButton#Nav:checked {{
     border-bottom: 3px solid {COLOR_ACCENT}; color: {COLOR_ACCENT}; font-weight: 700;
 }}
 QLineEdit, QComboBox, QSpinBox, QDateEdit, QPlainTextEdit, QTextEdit {{
     background: white; border: 1px solid #c3c8d0; border-radius: 6px;
-    padding: 10px; min-height: 40px; font-size: 15px;
+    /* Horizontal padding stays modest: the reports filter row has to fit six
+       controls plus a button across an 800 px panel. */
+    padding: 10px 8px; min-height: 40px; font-size: 15px;
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 2px solid {COLOR_ACCENT}; }}
-QComboBox::drop-down {{ width: 34px; }}
+QComboBox::drop-down {{ width: 26px; }}
 QTableWidget {{
     background: white; border: 1px solid #d8dbe0; border-radius: 6px;
     gridline-color: #e6e8ec; font-size: 14px;

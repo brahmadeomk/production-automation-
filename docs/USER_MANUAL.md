@@ -20,9 +20,16 @@ operator who was signed in.
 ### 2.1 Signing in
 
 1. The station boots straight into the login screen.
-2. Tap the username field; an on-screen keyboard appears (there is no need for a
-   physical keyboard).
+2. Tap the ⌨ button beside the username field; an on-screen keyboard appears
+   (there is no need for a physical keyboard).
 3. Enter your password and tap **Sign in**.
+
+The keyboard types **lower case** by default. **⇧ Shift** capitalises the next
+letter only; **Caps** latches until you tap it again — the same behaviour as a
+physical keyboard. Shift also reaches the symbols above the digits (`!@#$…`),
+and a row of `. - _ @ / : + #` is always available. Passwords are case
+sensitive, so check **Show characters** if a login is being rejected and you
+want to see what you actually typed.
 
 If this is your first login, you are asked to set a new password before you can
 continue.
@@ -299,4 +306,6 @@ recoverable with this station.
 | Every board fails with `E_NO_DEVICE` | Fixture seating, target power, ISP cable |
 | Serial number went backwards | Someone overrode the counter — check the audit log |
 | Status bar says `SIMULATION` | The station is not programming real hardware; call maintenance |
+| Password rejected but looks right | The keyboard types lower case unless Shift or Caps is on — tick **Show characters** |
+| Window does not fill the screen | The station was started without `--kiosk`; the service uses it automatically |
 | Status bar shows a backup failure | Network or share problem; production is unaffected |

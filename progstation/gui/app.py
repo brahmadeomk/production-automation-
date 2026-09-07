@@ -15,12 +15,20 @@ log = logging.getLogger(__name__)
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, app, session: Session):
+    def __init__(self, app, session: Session, *, kiosk: bool = False):
         super().__init__()
         self.app = app
         self.session = session
+        self.kiosk = kiosk
         self.setWindowTitle(f"{APP_NAME} — {app.config.station_id}")
         self.resize(800, 480)
+        if kiosk:
+            # A production station owns the panel: no title bar to drag, no
+            # way to uncover the desktop behind it.
+            flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
+            self.setWindowFlags(
+                flags.FramelessWindowHint | flags.WindowStaysOnTopHint
+            )
 
         from .admin_screen import AdminScreen
         from .history_screen import HistoryScreen
@@ -67,10 +75,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav_buttons[0].setChecked(True)
 
         nav_layout.addStretch(1)
-        user_label = QtWidgets.QLabel(
+        # The panel is only 800 px wide, so keep this short: the full name and
+        # role go in the tooltip and the status bar.  It must still be visible
+        # -- the operator has to be able to see who the station will record
+        # against every unit they program.
+        user_label = QtWidgets.QLabel(session.username)
+        user_label.setObjectName("Subtle")
+        user_label.setToolTip(
             f"{session.full_name or session.username} ({session.role})"
         )
-        user_label.setObjectName("Subtle")
+        user_label.setMaximumWidth(120)
         nav_layout.addWidget(user_label)
         logout = QtWidgets.QPushButton("Log out")
         logout.clicked.connect(self.close)
@@ -111,6 +125,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_status(self) -> None:
         health = self.app.health()
         parts = [
+            f"{self.session.username} ({self.session.role})",
             f"Station {health['station_id']}",
             f"GPIO {health['gpio_backend']}",
             f"avrdude {health['avrdude_version'] or 'not found'}",
@@ -151,7 +166,22 @@ class MainWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
 
-def run_gui(app, *, fullscreen: bool = True) -> int:
+def _fill_screen(window) -> None:
+    """Make the window occupy the whole panel.
+
+    showFullScreen() alone can leave a window sized to its previous geometry
+    under some window managers, so set it to the screen rectangle explicitly
+    first.  Without this the station shows a small window on a large panel.
+    """
+    screen = QtWidgets.QApplication.primaryScreen()
+    if screen is not None:
+        window.setGeometry(screen.geometry())
+    window.showFullScreen()
+    window.raise_()
+    window.activateWindow()
+
+
+def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
     """Start the touchscreen application.  Returns a process exit code."""
     from .login import LoginDialog
 
@@ -172,12 +202,14 @@ def run_gui(app, *, fullscreen: bool = True) -> int:
 
     # Log out returns here, so an operator hand-over does not need a restart.
     while True:
-        session = LoginDialog.ask(app.auth, station_id=app.config.station_id)
+        session = LoginDialog.ask(
+            app.auth, station_id=app.config.station_id, kiosk=kiosk
+        )
         if session is None:
             return 0
-        window = MainWindow(app, session)
-        if fullscreen:
-            window.showFullScreen()
+        window = MainWindow(app, session, kiosk=kiosk)
+        if fullscreen or kiosk:
+            _fill_screen(window)
         else:
             window.show()
         exec_app(qt_app)

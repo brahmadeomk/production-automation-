@@ -29,11 +29,19 @@ class Card(QtWidgets.QFrame):
 class TouchKeyboard(QtWidgets.QDialog):
     """On-screen keyboard so the station needs no physical keyboard.
 
-    ``numeric`` mode shows a keypad, which is what operators use for serial and
-    quantity entry; the full layout is only needed on the admin screens.
+    Passwords are case sensitive, so the letter keys must reach both cases:
+    an uppercase-only keypad makes a mixed-case password impossible to type
+    and locks the operator out. Shift applies to the next key, Caps latches.
+
+    ``numeric`` mode shows a plain keypad, which is what operators use for
+    serial and quantity entry.
     """
 
-    _ROWS_ALPHA = ("1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM.-_")
+    _ROWS = ("1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm")
+    #: Shifted face of the digit row, so symbols in passwords are reachable.
+    _SHIFTED_DIGITS = "!@#$%^&*()"
+    #: Always available, unaffected by shift.
+    _SYMBOLS = ".-_@/:+#"
     _ROWS_NUMERIC = ("789", "456", "123", "0.-")
 
     def __init__(self, parent=None, *, title: str = "Enter value", text: str = "",
@@ -41,6 +49,10 @@ class TouchKeyboard(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
+        self._numeric = numeric
+        self._shift = False
+        self._caps = False
+        self._letter_keys: List[tuple] = []          # (button, base character)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(8)
@@ -51,30 +63,64 @@ class TouchKeyboard(QtWidgets.QDialog):
             self.edit.setEchoMode(ECHO_PASSWORD)
         layout.addWidget(self.edit)
 
-        self._shift = False
+        if password:
+            # Typing a password blind on a touch panel is error prone, and a
+            # wrong entry costs a login attempt against the lockout counter.
+            self.reveal = QtWidgets.QCheckBox("Show characters")
+            self.reveal.toggled.connect(self._set_reveal)
+            layout.addWidget(self.reveal)
+
         keys = QtWidgets.QVBoxLayout()
         keys.setSpacing(6)
-        for row in (self._ROWS_NUMERIC if numeric else self._ROWS_ALPHA):
+        for row in (self._ROWS_NUMERIC if numeric else self._ROWS):
             line = QtWidgets.QHBoxLayout()
             line.setSpacing(6)
             for char in row:
                 button = QtWidgets.QPushButton(char)
-                button.setMinimumSize(56, 52)
-                button.clicked.connect(lambda _=False, c=char: self._type(c))
+                button.setMinimumSize(52, 50)
+                button.clicked.connect(lambda _=False, b=None, c=char: self._press(c))
                 line.addWidget(button)
+                if not numeric:
+                    self._letter_keys.append((button, char))
             keys.addLayout(line)
+
+        if not numeric:
+            symbols = QtWidgets.QHBoxLayout()
+            symbols.setSpacing(6)
+            for char in self._SYMBOLS:
+                button = QtWidgets.QPushButton(char)
+                button.setMinimumSize(52, 50)
+                button.clicked.connect(lambda _=False, c=char: self._type(c))
+                symbols.addWidget(button)
+            keys.addLayout(symbols)
         layout.addLayout(keys)
 
         controls = QtWidgets.QHBoxLayout()
         controls.setSpacing(6)
         if not numeric:
+            self.shift_button = QtWidgets.QPushButton("⇧ Shift")
+            self.shift_button.setCheckable(True)
+            self.shift_button.setMinimumHeight(50)
+            self.shift_button.clicked.connect(self._toggle_shift)
+            controls.addWidget(self.shift_button)
+
+            self.caps_button = QtWidgets.QPushButton("Caps")
+            self.caps_button.setCheckable(True)
+            self.caps_button.setMinimumHeight(50)
+            self.caps_button.clicked.connect(self._toggle_caps)
+            controls.addWidget(self.caps_button)
+
             space = QtWidgets.QPushButton("Space")
+            space.setMinimumHeight(50)
             space.clicked.connect(lambda: self._type(" "))
             controls.addWidget(space, 2)
+
         backspace = QtWidgets.QPushButton("⌫ Back")
+        backspace.setMinimumHeight(50)
         backspace.clicked.connect(self._backspace)
         controls.addWidget(backspace)
         clear = QtWidgets.QPushButton("Clear")
+        clear.setMinimumHeight(50)
         clear.clicked.connect(self.edit.clear)
         controls.addWidget(clear)
         layout.addLayout(controls)
@@ -90,6 +136,55 @@ class TouchKeyboard(QtWidgets.QDialog):
         buttons.addWidget(ok)
         layout.addLayout(buttons)
 
+        self._refresh_key_faces()
+
+    # ------------------------------------------------------------------ case
+    @property
+    def upper(self) -> bool:
+        """True when the next letter is typed upper case."""
+        # Shift and Caps combine the way a physical keyboard does: either one
+        # gives upper case, and Shift while Caps is on gives lower.
+        return self._caps != self._shift
+
+    def _toggle_shift(self) -> None:
+        self._shift = self.shift_button.isChecked()
+        self._refresh_key_faces()
+
+    def _toggle_caps(self) -> None:
+        self._caps = self.caps_button.isChecked()
+        self._refresh_key_faces()
+
+    def _refresh_key_faces(self) -> None:
+        """Show on each key exactly what pressing it will type."""
+        for button, base in self._letter_keys:
+            if base.isalpha():
+                button.setText(base.upper() if self.upper else base.lower())
+            elif base.isdigit() and self._shift:
+                button.setText(self._SHIFTED_DIGITS[self._ROWS[0].index(base)])
+            else:
+                button.setText(base)
+
+    def _press(self, base: str) -> None:
+        if base.isalpha():
+            self._type(base.upper() if self.upper else base.lower())
+        elif base.isdigit() and self._shift:
+            self._type(self._SHIFTED_DIGITS[self._ROWS[0].index(base)])
+        else:
+            self._type(base)
+        if self._shift:
+            # Shift applies to one key only, as on a physical keyboard.
+            self._shift = False
+            self.shift_button.setChecked(False)
+            self._refresh_key_faces()
+
+    def _set_reveal(self, shown: bool) -> None:
+        self.edit.setEchoMode(
+            QtWidgets.QLineEdit.EchoMode.Normal
+            if hasattr(QtWidgets.QLineEdit, "EchoMode")
+            else QtWidgets.QLineEdit.Normal
+        ) if shown else self.edit.setEchoMode(ECHO_PASSWORD)
+
+    # ----------------------------------------------------------------- entry
     def _type(self, char: str) -> None:
         self.edit.setText(self.edit.text() + char)
 

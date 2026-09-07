@@ -6,18 +6,22 @@ from typing import Optional
 
 from ..errors import AuthError
 from ..security.auth import AuthManager, Session
-from .qt import ALIGN_CENTER, QtWidgets, exec_dialog
+from .qt import ALIGN_CENTER, QtCore, QtWidgets, exec_dialog
 from .widgets import TouchLineEdit
 
 
 class LoginDialog(QtWidgets.QDialog):
-    def __init__(self, auth: AuthManager, parent=None, *, station_id: str = ""):
+    def __init__(self, auth: AuthManager, parent=None, *, station_id: str = "",
+                 kiosk: bool = False):
         super().__init__(parent)
         self.auth = auth
         self.session: Optional[Session] = None
         self.setWindowTitle("Operator Login")
         self.setModal(True)
         self.setMinimumWidth(420)
+        if kiosk:
+            flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
+            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(12)
@@ -77,8 +81,13 @@ class LoginDialog(QtWidgets.QDialog):
         self.accept()
 
     @classmethod
-    def ask(cls, auth: AuthManager, parent=None, *, station_id: str = "") -> Optional[Session]:
-        dialog = cls(auth, parent, station_id=station_id)
+    def ask(cls, auth: AuthManager, parent=None, *, station_id: str = "",
+            kiosk: bool = False) -> Optional[Session]:
+        dialog = cls(auth, parent, station_id=station_id, kiosk=kiosk)
+        if kiosk:
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen is not None:
+                dialog.setGeometry(screen.geometry())
         if exec_dialog(dialog):
             return dialog.session
         return None

@@ -302,3 +302,14 @@ def test_new_project_gets_documented_defaults(station, capsys, tmp_path):
     out = capsys.readouterr().out
     assert "SerialStart     : 1" in out
     assert "SerialDigits    : 6" in out
+
+
+def test_gui_accepts_kiosk_and_windowed_flags():
+    """Both display modes must be reachable from the command line."""
+    from progstation.cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["gui", "--kiosk"]).kiosk is True
+    assert parser.parse_args(["gui", "--windowed"]).windowed is True
+    plain = parser.parse_args(["gui"])
+    assert plain.kiosk is False and plain.windowed is False

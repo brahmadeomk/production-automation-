@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 
 
-def run_gui(app, *, fullscreen: bool = True) -> int:
+def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
     from .qt import QT_AVAILABLE, missing_message
 
     if not QT_AVAILABLE:
@@ -19,4 +19,4 @@ def run_gui(app, *, fullscreen: bool = True) -> int:
 
     from .app import run_gui as _run_gui
 
-    return _run_gui(app, fullscreen=fullscreen)
+    return _run_gui(app, fullscreen=fullscreen, kiosk=kiosk)

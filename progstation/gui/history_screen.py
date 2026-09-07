@@ -86,7 +86,8 @@ class HistoryScreen(QtWidgets.QWidget):
         clear.clicked.connect(self._clear)
         buttons.addWidget(clear)
         buttons.addStretch(1)
-        self.export_button = QtWidgets.QPushButton("Export to Excel")
+        self.export_button = QtWidgets.QPushButton("Export")
+        self.export_button.setToolTip("Export the current view to an .xlsx file")
         self.export_button.clicked.connect(self._export)
         self.export_button.setEnabled(OPENPYXL_AVAILABLE)
         if not OPENPYXL_AVAILABLE:
