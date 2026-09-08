@@ -193,10 +193,16 @@ def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
     # for the smallest supported screen (800x480); on a 10-inch display those
     # sizes are legible but lost in the extra space.
     screen = qt_app.primaryScreen()
-    scale = scale_for(screen.geometry().height() if screen else 0)
+    geometry = screen.geometry() if screen else None
+    scale = scale_for(geometry.height() if geometry else 0)
     qt_app.setStyleSheet(build_stylesheet(scale))
-    log.info("UI scale %.2f for a %s px high screen", scale,
-             screen.geometry().height() if screen else "unknown")
+    # Report it the way `xdpyinfo | grep dimensions` does, so the two can be
+    # compared directly when a panel is not rendering as expected.
+    log.info(
+        "display %s, UI scale %.2f",
+        f"{geometry.width()}x{geometry.height()}" if geometry else "unknown",
+        scale,
+    )
 
     password = app.bootstrap_admin()
     if password:

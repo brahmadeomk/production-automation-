@@ -475,11 +475,33 @@ The on-screen keyboard sizes its keys from the screen rather than the scale, so
 its OK and Cancel buttons stay reachable on a short panel. Keys never shrink
 below 38 px.
 
-The chosen factor is logged at startup:
+### Confirming the resolution
+
+```bash
+DISPLAY=:0 xdpyinfo | grep dimensions
+```
+
+```
+dimensions:    1024x600 pixels (270x158 millimeters)
+```
+
+`DISPLAY=:0` matters: run inside a RealVNC *virtual* desktop, `xdpyinfo`
+reports the VNC session's geometry rather than the physical panel. Cross-check
+with `xrandr | grep '\*'`, or `fbset -s | grep geometry` when X is not running.
+
+The station logs the display it detected, in the same form, so the two can be
+compared directly:
 
 ```bash
 journalctl -u progstation | grep "UI scale"
 ```
+
+```
+display 1024x600, UI scale 1.25
+```
+
+If that disagrees with `xdpyinfo`, the station attached to a different display
+— check `DISPLAY` in `/etc/progstation/display.env`.
 
 ### 9.4 Common symptoms
 
