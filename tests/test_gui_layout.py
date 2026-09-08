@@ -207,3 +207,41 @@ def test_layout_fits_a_ten_inch_panel(qt_app, tmp_path):
             window.close()
     finally:
         app.close()
+
+
+@pytest.mark.parametrize("panel_height", [480, 600, 800])
+def test_keyboard_fits_on_screen(qt_app, panel_height):
+    """OK and Cancel must be reachable.
+
+    The keyboard was taller than a 600 px panel, putting its buttons off the
+    bottom edge: an operator could type a password but never confirm it.
+
+    The stylesheet has to be applied for this to mean anything -- the overflow
+    came from keys inheriting the generous padding of ordinary buttons, which
+    is invisible without it.
+    """
+    from progstation.gui.style import build_stylesheet, scale_for
+
+    qt_app.setStyleSheet(build_stylesheet(scale_for(panel_height)))
+    screen = qt_app.primaryScreen().availableGeometry()
+    try:
+        for numeric in (False, True):
+            for password in (False, True):
+                kb = TouchKeyboard(title="Password", numeric=numeric, password=password)
+                kb.show()
+                hint = kb.minimumSizeHint()
+                assert hint.height() <= screen.height(), (
+                    f"keyboard is {hint.height()} px tall at the {panel_height} px"
+                    f" scale, screen is {screen.height()}"
+                    f" (numeric={numeric}, password={password})"
+                )
+                assert hint.width() <= screen.width()
+                kb.close()
+    finally:
+        qt_app.setStyleSheet("")
+
+
+def test_keyboard_keys_stay_a_usable_touch_target(qt_app):
+    """Shrinking to fit must not produce keys too small to hit."""
+    height = TouchKeyboard._key_height(numeric=False, password=True)
+    assert 38 <= height <= 64

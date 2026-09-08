@@ -463,9 +463,19 @@ Log out and back in. Use either this **or** the systemd service, never both.
 ### 9.3 Interface size
 
 The interface is written for the smallest supported panel (800x480) and scales
-up with the screen, to a limit of 1.6x. A 10-inch 1280x800 panel therefore gets
-noticeably larger text and buttons than a 7-inch one. The chosen factor is
-logged at startup:
+up with the screen, to a limit of 1.6x.
+
+| Panel | Scale | Notes |
+|---|---|---|
+| 800x480 (7-inch) | 1.00x | The size everything is designed at |
+| **1024x600 (10-inch)** | **1.25x** | **The fitted HMI** |
+| 1280x800 | 1.60x | Scaling caps here |
+
+The on-screen keyboard sizes its keys from the screen rather than the scale, so
+its OK and Cancel buttons stay reachable on a short panel. Keys never shrink
+below 38 px.
+
+The chosen factor is logged at startup:
 
 ```bash
 journalctl -u progstation | grep "UI scale"

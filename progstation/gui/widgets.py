@@ -54,8 +54,10 @@ class TouchKeyboard(QtWidgets.QDialog):
         self._caps = False
         self._letter_keys: List[tuple] = []          # (button, base character)
 
+        key_height = self._key_height(numeric=numeric, password=password)
+
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
         layout.addWidget(QtWidgets.QLabel(title))
 
         self.edit = QtWidgets.QLineEdit(text)
@@ -77,7 +79,9 @@ class TouchKeyboard(QtWidgets.QDialog):
             line.setSpacing(6)
             for char in row:
                 button = QtWidgets.QPushButton(char)
-                button.setMinimumSize(52, 50)
+                button.setObjectName("Key")
+                button.setFixedHeight(key_height)
+                button.setMinimumWidth(40)
                 button.clicked.connect(lambda _=False, b=None, c=char: self._press(c))
                 line.addWidget(button)
                 if not numeric:
@@ -89,7 +93,9 @@ class TouchKeyboard(QtWidgets.QDialog):
             symbols.setSpacing(6)
             for char in self._SYMBOLS:
                 button = QtWidgets.QPushButton(char)
-                button.setMinimumSize(52, 50)
+                button.setObjectName("Key")
+                button.setFixedHeight(key_height)
+                button.setMinimumWidth(40)
                 button.clicked.connect(lambda _=False, c=char: self._type(c))
                 symbols.addWidget(button)
             keys.addLayout(symbols)
@@ -100,27 +106,27 @@ class TouchKeyboard(QtWidgets.QDialog):
         if not numeric:
             self.shift_button = QtWidgets.QPushButton("⇧ Shift")
             self.shift_button.setCheckable(True)
-            self.shift_button.setMinimumHeight(50)
+            self.shift_button.setFixedHeight(key_height)
             self.shift_button.clicked.connect(self._toggle_shift)
             controls.addWidget(self.shift_button)
 
             self.caps_button = QtWidgets.QPushButton("Caps")
             self.caps_button.setCheckable(True)
-            self.caps_button.setMinimumHeight(50)
+            self.caps_button.setFixedHeight(key_height)
             self.caps_button.clicked.connect(self._toggle_caps)
             controls.addWidget(self.caps_button)
 
             space = QtWidgets.QPushButton("Space")
-            space.setMinimumHeight(50)
+            space.setFixedHeight(key_height)
             space.clicked.connect(lambda: self._type(" "))
             controls.addWidget(space, 2)
 
         backspace = QtWidgets.QPushButton("⌫ Back")
-        backspace.setMinimumHeight(50)
+        backspace.setFixedHeight(key_height)
         backspace.clicked.connect(self._backspace)
         controls.addWidget(backspace)
         clear = QtWidgets.QPushButton("Clear")
-        clear.setMinimumHeight(50)
+        clear.setFixedHeight(key_height)
         clear.clicked.connect(self.edit.clear)
         controls.addWidget(clear)
         layout.addLayout(controls)
@@ -137,6 +143,25 @@ class TouchKeyboard(QtWidgets.QDialog):
         layout.addLayout(buttons)
 
         self._refresh_key_faces()
+
+    # ------------------------------------------------------------------ size
+    @staticmethod
+    def _key_height(*, numeric: bool, password: bool) -> int:
+        """Key height that keeps the whole keyboard on screen.
+
+        The dialog is taller than a 600 px panel at default sizes, which puts
+        OK and Cancel off the bottom edge -- an operator could type a password
+        but never confirm it.  Derive the key height from the screen instead of
+        fixing it.
+        """
+        screen = QtWidgets.QApplication.primaryScreen()
+        available = screen.availableGeometry().height() if screen else 600
+        rows = 5 if numeric else 6          # key rows plus the control row
+        # Title, entry field, optional reveal box, OK/Cancel, margins, spacing.
+        overhead = 150 + (30 if password else 0) + rows * 6
+        height = (available - overhead) // rows
+        # Never below a reliable touch target, never wastefully large.
+        return max(38, min(height, 64))
 
     # ------------------------------------------------------------------ case
     @property

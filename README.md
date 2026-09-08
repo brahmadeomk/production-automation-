@@ -11,6 +11,8 @@ programming with a fixed, operator-proof cycle.
 
 ![Production screen](docs/screenshots/production.png)
 
+*Shown at 1024x600, the resolution of the fitted 10-inch HMI. The interface scales from 800x480 up to 1280x800.*
+
 ## What it does
 
 Press **START** with a board in the fixture and the station runs one fixed cycle:
