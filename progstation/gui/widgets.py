@@ -53,6 +53,8 @@ class TouchKeyboard(QtWidgets.QDialog):
         self._shift = False
         self._caps = False
         self._letter_keys: List[tuple] = []          # (button, base character)
+        self._keys: List[QtWidgets.QPushButton] = []  # every key, for resizing
+        self._rows = 5 if numeric else 6
 
         key_height = self._key_height(numeric=numeric, password=password)
 
@@ -80,8 +82,8 @@ class TouchKeyboard(QtWidgets.QDialog):
             for char in row:
                 button = QtWidgets.QPushButton(char)
                 button.setObjectName("Key")
-                button.setFixedHeight(key_height)
                 button.setMinimumWidth(40)
+                self._keys.append(button)
                 button.clicked.connect(lambda _=False, b=None, c=char: self._press(c))
                 line.addWidget(button)
                 if not numeric:
@@ -94,8 +96,8 @@ class TouchKeyboard(QtWidgets.QDialog):
             for char in self._SYMBOLS:
                 button = QtWidgets.QPushButton(char)
                 button.setObjectName("Key")
-                button.setFixedHeight(key_height)
                 button.setMinimumWidth(40)
+                self._keys.append(button)
                 button.clicked.connect(lambda _=False, c=char: self._type(c))
                 symbols.addWidget(button)
             keys.addLayout(symbols)
@@ -106,27 +108,32 @@ class TouchKeyboard(QtWidgets.QDialog):
         if not numeric:
             self.shift_button = QtWidgets.QPushButton("⇧ Shift")
             self.shift_button.setCheckable(True)
-            self.shift_button.setFixedHeight(key_height)
+            self.shift_button.setObjectName("Key")
+            self._keys.append(self.shift_button)
             self.shift_button.clicked.connect(self._toggle_shift)
             controls.addWidget(self.shift_button)
 
             self.caps_button = QtWidgets.QPushButton("Caps")
             self.caps_button.setCheckable(True)
-            self.caps_button.setFixedHeight(key_height)
+            self.caps_button.setObjectName("Key")
+            self._keys.append(self.caps_button)
             self.caps_button.clicked.connect(self._toggle_caps)
             controls.addWidget(self.caps_button)
 
             space = QtWidgets.QPushButton("Space")
-            space.setFixedHeight(key_height)
+            space.setObjectName("Key")
+            self._keys.append(space)
             space.clicked.connect(lambda: self._type(" "))
             controls.addWidget(space, 2)
 
         backspace = QtWidgets.QPushButton("⌫ Back")
-        backspace.setFixedHeight(key_height)
+        backspace.setObjectName("Key")
+        self._keys.append(backspace)
         backspace.clicked.connect(self._backspace)
         controls.addWidget(backspace)
         clear = QtWidgets.QPushButton("Clear")
-        clear.setFixedHeight(key_height)
+        clear.setObjectName("Key")
+        self._keys.append(clear)
         clear.clicked.connect(self.edit.clear)
         controls.addWidget(clear)
         layout.addLayout(controls)
@@ -142,6 +149,8 @@ class TouchKeyboard(QtWidgets.QDialog):
         buttons.addWidget(ok)
         layout.addLayout(buttons)
 
+        self._apply_key_style(key_height)
+        self._fit_to_screen(key_height)
         self._refresh_key_faces()
 
     # ------------------------------------------------------------------ size
@@ -149,19 +158,66 @@ class TouchKeyboard(QtWidgets.QDialog):
     def _key_height(*, numeric: bool, password: bool) -> int:
         """Key height that keeps the whole keyboard on screen.
 
-        The dialog is taller than a 600 px panel at default sizes, which puts
-        OK and Cancel off the bottom edge -- an operator could type a password
-        but never confirm it.  Derive the key height from the screen instead of
-        fixing it.
+        At default sizes the dialog is taller than a 600 px panel, putting OK
+        and Cancel off the bottom edge -- an operator could type a password but
+        never confirm it.  Derive the height from the screen instead.
+
+        The surrounding chrome (title, entry field, reveal box, OK/Cancel) is
+        scaled with the panel by the stylesheet, so the space it takes has to
+        be scaled here too or the keys are sized against a budget that no
+        longer exists.
         """
+        from .style import scale_for
+
         screen = QtWidgets.QApplication.primaryScreen()
         available = screen.availableGeometry().height() if screen else 600
+        scale = scale_for(screen.geometry().height() if screen else 0)
+
         rows = 5 if numeric else 6          # key rows plus the control row
-        # Title, entry field, optional reveal box, OK/Cancel, margins, spacing.
-        overhead = 150 + (30 if password else 0) + rows * 6
-        height = (available - overhead) // rows
+        chrome = (150 + (30 if password else 0)) * scale
+        height = int((available - chrome - rows * 6) // rows)
         # Never below a reliable touch target, never wastefully large.
-        return max(38, min(height, 64))
+        return max(38, min(height, int(64 * scale)))
+
+    def _apply_key_style(self, key_height: int) -> None:
+        """Pin every button in this dialog to *key_height*.
+
+        setFixedHeight alone is not enough: a style sheet ``min-height`` beats
+        it, so the height is declared here, on this dialog, where the
+        application sheet cannot override it.  OK and Cancel are included --
+        left at the application's button metrics they alone add 90 px on a
+        scaled panel.
+        """
+        font = max(13, int(key_height * 0.42))
+        self.setStyleSheet(
+            f"QPushButton {{ min-height: {key_height}px; max-height: {key_height}px;"
+            f" padding: 2px 8px; font-size: {font}px; border-radius: 6px; }}"
+        )
+        for button in self._keys:
+            button.setFixedHeight(key_height)
+
+    def _fit_to_screen(self, key_height: int) -> int:
+        """Shrink the keys until the whole dialog is on screen.
+
+        The chrome around the keys scales with the panel, and estimating it
+        was consistently wrong -- the dialog still overflowed.  Measure the
+        assembled dialog instead and take the overflow out of the key rows,
+        which is the only part that can give.
+        """
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return key_height
+        available = screen.availableGeometry().height()
+        for _ in range(6):
+            self.adjustSize()
+            overflow = self.sizeHint().height() - available
+            if overflow <= 0 or key_height <= 38:
+                break
+            # Spread the overflow across the rows, always losing at least 1 px
+            # so a stubborn remainder cannot loop forever.
+            key_height = max(38, key_height - max(1, -(-overflow // self._rows)))
+            self._apply_key_style(key_height)
+        return key_height
 
     # ------------------------------------------------------------------ case
     @property

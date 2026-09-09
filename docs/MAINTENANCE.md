@@ -471,9 +471,13 @@ up with the screen, to a limit of 1.6x.
 | **1024x600 (10-inch)** | **1.25x** | **The fitted HMI** |
 | 1280x800 | 1.60x | Scaling caps here |
 
-The on-screen keyboard sizes its keys from the screen rather than the scale, so
-its OK and Cancel buttons stay reachable on a short panel. Keys never shrink
-below 38 px.
+The on-screen keyboard measures the assembled dialog against the screen and
+takes any overflow out of the key rows, so OK and Cancel stay reachable on a
+short panel. Keys never shrink below 38 px, and every row is the same height.
+
+If the keys ever render as a thin strip while Shift and Space look normal, an
+application style sheet is overriding their height -- a style sheet
+`min-height` beats `setFixedHeight()`.
 
 ### Confirming the resolution
 

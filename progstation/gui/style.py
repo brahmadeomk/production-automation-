@@ -70,10 +70,12 @@ QPushButton#Start {{
 }}
 QPushButton#Start:disabled {{ background: #a6cdb2; color: #eef5f0; }}
 QPushButton#Danger {{ background: {COLOR_FAIL}; color: white; border: none; }}
-/* Keyboard keys size themselves to the panel, so they must not inherit the
-   generous padding and minimum height of ordinary buttons. */
+/* Keyboard keys size themselves to the panel.  Their height is set by the
+   keyboard itself, per dialog -- deliberately not here, because a style sheet
+   min-height overrides setFixedHeight() and would either crush or inflate the
+   keys depending on which value won. */
 QPushButton#Key {{
-    padding: 2px; min-height: 0px; font-size: 17px; border-radius: 6px;
+    padding: 2px; border-radius: 6px;
 }}
 QPushButton#Nav {{
     background: transparent; border: none; border-bottom: 3px solid transparent;

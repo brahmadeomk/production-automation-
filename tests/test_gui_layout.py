@@ -213,12 +213,8 @@ def test_layout_fits_a_ten_inch_panel(qt_app, tmp_path):
 def test_keyboard_fits_on_screen(qt_app, panel_height):
     """OK and Cancel must be reachable.
 
-    The keyboard was taller than a 600 px panel, putting its buttons off the
-    bottom edge: an operator could type a password but never confirm it.
-
-    The stylesheet has to be applied for this to mean anything -- the overflow
-    came from keys inheriting the generous padding of ordinary buttons, which
-    is invisible without it.
+    The stylesheet has to be applied for this to mean anything -- the sizes
+    that decide the dialog's height live there.
     """
     from progstation.gui.style import build_stylesheet, scale_for
 
@@ -229,14 +225,36 @@ def test_keyboard_fits_on_screen(qt_app, panel_height):
             for password in (False, True):
                 kb = TouchKeyboard(title="Password", numeric=numeric, password=password)
                 kb.show()
-                hint = kb.minimumSizeHint()
+                hint = kb.sizeHint()
                 assert hint.height() <= screen.height(), (
                     f"keyboard is {hint.height()} px tall at the {panel_height} px"
                     f" scale, screen is {screen.height()}"
                     f" (numeric={numeric}, password={password})"
                 )
-                assert hint.width() <= screen.width()
                 kb.close()
+    finally:
+        qt_app.setStyleSheet("")
+
+
+@pytest.mark.parametrize("panel_height", [480, 600, 800])
+def test_keyboard_keys_are_not_crushed(qt_app, panel_height):
+    """Every key must stay a usable touch target.
+
+    Fitting the dialog is not enough on its own: a style sheet ``min-height``
+    overrides ``setFixedHeight``, and with it set to 0 the layout squeezed the
+    keys to 16 px while the control buttons stayed at 92 px.  The dialog then
+    *passed* a height check, because crushed keys make it smaller.
+    """
+    from progstation.gui.style import build_stylesheet, scale_for
+
+    qt_app.setStyleSheet(build_stylesheet(scale_for(panel_height)))
+    try:
+        kb = TouchKeyboard(title="Password", password=True)
+        kb.show()
+        heights = {button.height() for button in kb._keys}
+        assert len(heights) == 1, f"keyboard rows differ in height: {sorted(heights)}"
+        assert heights.pop() >= 36, "keys are too small to hit reliably"
+        kb.close()
     finally:
         qt_app.setStyleSheet("")
 
