@@ -41,7 +41,9 @@ class LoginDialog(_MessageMixin, QtWidgets.QDialog):
         self.setMinimumWidth(420)
         if kiosk:
             flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
-            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+            # Not frameless: a frameless window wedges any child it opens
+            # under the kiosk window manager.  See MainWindow in app.py.
+            self.setWindowFlags(flags.WindowStaysOnTopHint)
 
         # In kiosk the dialog covers the whole panel, so the form is centred at
         # a readable width instead of stretching a two-field login across a
@@ -236,7 +238,9 @@ class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
         self.setModal(True)
         if kiosk:
             flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
-            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+            # Not frameless: a frameless window wedges any child it opens
+            # under the kiosk window manager.  See MainWindow in app.py.
+            self.setWindowFlags(flags.WindowStaysOnTopHint)
         else:
             self.setMinimumWidth(420)
 
@@ -358,7 +362,9 @@ class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
         self.setModal(True)
         if kiosk:
             flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
-            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+            # Not frameless: a frameless window wedges any child it opens
+            # under the kiosk window manager.  See MainWindow in app.py.
+            self.setWindowFlags(flags.WindowStaysOnTopHint)
 
         outer = QtWidgets.QHBoxLayout(self)
         outer.addStretch(1)

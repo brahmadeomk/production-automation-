@@ -482,8 +482,17 @@ prompts for administrator credentials; an operator account is refused, and both
 the refusal and the successful exit are written to the audit log
 (`kiosk.exit_denied`, `kiosk.exit`). Escape no longer closes the login screen.
 
-Every dialog in the sign-in path carries its own keyboard, for the same reason
-as the login screen. That includes the forced password change: an account
+**No window in the kiosk is frameless.** This one is easy to undo by accident.
+Under matchbox a frameless parent window wedges every child window the station
+opens -- dialogs, keyboards and message boxes alike -- and the application
+stops responding. Measured on a 1024x600 panel, a frameless parent wedged the
+child five times out of five; the same window without the hint worked every
+time and still covered the panel exactly. `showFullScreen()` gives the full
+screen on its own and the session starts matchbox with `-use_titlebar no`, so
+the hint bought nothing and cost every dialog. A test enforces this.
+
+Every dialog in the sign-in path also carries its own keyboard, for the same
+reason as the login screen. That includes the forced password change: an account
 flagged to change its password meets that dialog between Sign in and the
 programming screen, and without keys on it the operator cannot get past --
 the station looks like it ignored the sign-in.
@@ -631,6 +640,7 @@ If that disagrees with `xdpyinfo`, the station attached to a different display
 | Window smaller than the panel | Start with `--kiosk` (frameless, fullscreen, always on top). The systemd unit already does |
 | Right-hand tabs cut off | The layout is sized for 800x480; a narrower panel will clip. Report the resolution |
 | Exit does nothing in kiosk mode | Fixed: the prompt now embeds its keyboard. On an older build the window manager collapsed it to a sliver off the visible area |
+| Station freezes when any dialog opens | A window was made frameless again. See above -- the kiosk window manager wedges children of a frameless parent |
 | Sign in accepted, programming screen never appears | The account is flagged to change its password. The change dialog now carries a keyboard; on an older build it depended on a separate window the kiosk WM mismanaged, leaving the operator stuck on it |
 
 Test the GUI without the panel:

@@ -138,7 +138,18 @@ def test_window_fits_the_panel(qt_app, tmp_path):
         app.close()
 
 
-def test_kiosk_mode_is_frameless_and_on_top(qt_app, tmp_path):
+def test_kiosk_mode_is_on_top_but_never_frameless(qt_app, tmp_path):
+    """The kiosk must stay on top -- and must NOT be frameless.
+
+    Under the kiosk's window manager a frameless parent wedges every child
+    window the station opens: dialogs, keyboards and message boxes alike stop
+    the application dead. Measured over repeated runs against matchbox on a
+    1024x600 panel, a frameless parent wedged the child 5 times out of 5,
+    while the same window without the hint worked every time and still covered
+    the panel exactly. showFullScreen() gives the full screen on its own, and
+    the kiosk session starts matchbox with no title bar, so the hint bought
+    nothing and cost every dialog.
+    """
     from PyQt5 import QtCore
 
     from progstation.gui.app import MainWindow
@@ -148,8 +159,10 @@ def test_kiosk_mode_is_frameless_and_on_top(qt_app, tmp_path):
     try:
         kiosk = MainWindow(app, Session(1, "admin", "A", "admin"), kiosk=True)
         flags = int(kiosk.windowFlags())
-        assert flags & int(QtCore.Qt.FramelessWindowHint)
         assert flags & int(QtCore.Qt.WindowStaysOnTopHint)
+        assert not flags & int(QtCore.Qt.FramelessWindowHint), (
+            "a frameless kiosk window freezes the station on the first dialog"
+        )
         kiosk.close()
 
         windowed = MainWindow(app, Session(1, "admin", "A", "admin"), kiosk=False)
@@ -157,6 +170,23 @@ def test_kiosk_mode_is_frameless_and_on_top(qt_app, tmp_path):
         windowed.close()
     finally:
         app.close()
+
+
+def test_no_kiosk_dialog_is_frameless(qt_app, auth_station):
+    """Same hazard one level down: these dialogs open children of their own."""
+    from PyQt5 import QtCore
+    from progstation.gui.login import ChangePasswordDialog, ExitKioskDialog, LoginDialog
+
+    for dialog in (
+        LoginDialog(auth_station, station_id="S", kiosk=True),
+        ChangePasswordDialog(None, auth_station, "admin", kiosk=True),
+        ExitKioskDialog(None, auth_station, kiosk=True),
+    ):
+        flags = int(dialog.windowFlags())
+        assert not flags & int(QtCore.Qt.FramelessWindowHint), (
+            f"{type(dialog).__name__} is frameless; anything it opens will wedge"
+        )
+        dialog.close()
 
 
 # ------------------------------------------------------------------ scaling

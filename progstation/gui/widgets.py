@@ -433,6 +433,7 @@ class TouchLineEdit(QtWidgets.QWidget):
         if password:
             self.edit.setEchoMode(ECHO_PASSWORD)
         layout.addWidget(self.edit, 1)
+        self.keyboard_button = None
         if keyboard_button:
             # Omitted where a keyboard is already on the screen, as on the
             # kiosk login: a button that opens a second one is just confusing.
@@ -441,6 +442,19 @@ class TouchLineEdit(QtWidgets.QWidget):
             button.setToolTip("On-screen keyboard")
             button.clicked.connect(self._open_keyboard)
             layout.addWidget(button)
+            self.keyboard_button = button
+
+    def drop_keyboard_button(self) -> None:
+        """Remove the button that opens a keyboard in its own window.
+
+        Used when a keyboard has been docked into the surrounding dialog: the
+        second window is not merely redundant there, it is unusable.
+        """
+        if self.keyboard_button is not None:
+            self.layout().removeWidget(self.keyboard_button)
+            self.keyboard_button.setParent(None)
+            self.keyboard_button.deleteLater()
+            self.keyboard_button = None
 
     def _open_keyboard(self) -> None:
         value = TouchKeyboard.ask(
@@ -524,3 +538,111 @@ def notify(parent, title: str, message: str, *, error: bool = False) -> None:
     icons = getattr(QtWidgets.QMessageBox, "Icon", QtWidgets.QMessageBox)
     box.setIcon(icons.Critical if error else icons.Information)
     exec_dialog(box)
+
+
+# --------------------------------------------------------------- kiosk keyboard
+_KIOSK = False
+
+
+def set_kiosk(enabled: bool) -> None:
+    """Record that the application owns the whole screen.
+
+    Set once at start-up.  Dialogs consult it rather than each being told
+    separately, because a dialog that is not told behaves like a desktop one
+    and reaches for a keyboard in its own window.
+    """
+    global _KIOSK
+    _KIOSK = bool(enabled)
+
+
+def kiosk_enabled() -> bool:
+    return _KIOSK
+
+
+def dock_keyboard(dialog, *, scroll: bool = True) -> Optional["KeyboardPad"]:
+    """Put a keyboard inside ``dialog`` and point the touch fields at it.
+
+    Returns the pad, or ``None`` outside kiosk mode, where the ordinary
+    keyboard button is fine and a real window manager places a second window
+    correctly.
+
+    On the kiosk a second top-level window is not an option.  The minimal
+    window manager collapses such windows, and over the always-on-top main
+    window opening one wedges the X connection outright -- the station stops
+    responding.  So everything the operator types has to happen inside the
+    window that is already on the screen.
+
+    The form is put in a scroll area first: the panel is 600 px tall and the
+    keyboard needs about 250 of them, which is less than the taller dialogs
+    ask for on their own.
+    """
+    if not _KIOSK:
+        return None
+
+    fields = dialog.findChildren(TouchLineEdit)
+    if not fields:
+        return None
+    for field in fields:
+        field.drop_keyboard_button()
+
+    password = any(f._password for f in fields)
+    pad = KeyboardPad(dialog, key_height=keyboard_key_height(numeric=False,
+                                                             password=password))
+    pad.set_target(fields[0].edit)
+
+    body = dialog.layout()
+    if body is not None and scroll:
+        # Re-parenting the existing layout on to a container takes it off the
+        # dialog, which is what lets a new top-level layout be set below.
+        container = QtWidgets.QWidget()
+        container.setLayout(body)
+        area = QtWidgets.QScrollArea()
+        area.setWidget(container)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QtWidgets.QFrame.Shape.NoFrame
+                           if hasattr(QtWidgets.QFrame, "Shape")
+                           else QtWidgets.QFrame.NoFrame)
+        outer = QtWidgets.QVBoxLayout(dialog)
+        outer.setContentsMargins(6, 6, 6, 6)
+        outer.setSpacing(6)
+        outer.addWidget(area, 1)
+        outer.addWidget(pad, 0)
+    elif body is not None:
+        body.addWidget(pad)
+
+    _KeyboardRouter.attach(dialog, pad, fields)
+
+    # A dialog that asked for more than the panel has must not keep asking:
+    # under the kiosk window manager the excess is simply cut off.
+    dialog.setMinimumSize(0, 0)
+    screen = QtWidgets.QApplication.primaryScreen()
+    if screen is not None:
+        dialog.setGeometry(screen.geometry())
+    return pad
+
+
+class _KeyboardRouter(QtCore.QObject):
+    """Points the docked keyboard at whichever field has the focus."""
+
+    def __init__(self, parent, pad: "KeyboardPad"):
+        super().__init__(parent)
+        self.pad = pad
+
+    @classmethod
+    def attach(cls, dialog, pad: "KeyboardPad", fields) -> "_KeyboardRouter":
+        router = cls(dialog, pad)
+        for field in fields:
+            field.edit.installEventFilter(router)
+        # Keep it alive for as long as the dialog: an event filter that is
+        # collected stops routing and the keys type into nothing.
+        dialog._keyboard_router = router
+        return router
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt naming
+        focus_in = (
+            QtCore.QEvent.Type.FocusIn if hasattr(QtCore.QEvent, "Type")
+            else QtCore.QEvent.FocusIn
+        )
+        if event.type() == focus_in:
+            self.pad.set_target(watched)
+        return super().eventFilter(watched, event)

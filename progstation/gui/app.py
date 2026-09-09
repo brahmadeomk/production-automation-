@@ -10,6 +10,7 @@ from .. import APP_NAME, __version__
 from ..security.auth import Session
 from .qt import QtCore, QtWidgets, exec_app
 from .style import build_stylesheet, scale_for
+from .widgets import set_kiosk
 
 log = logging.getLogger(__name__)
 
@@ -23,12 +24,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(f"{APP_NAME} — {app.config.station_id}")
         self.resize(800, 480)
         if kiosk:
-            # A production station owns the panel: no title bar to drag, no
-            # way to uncover the desktop behind it.
+            # A production station owns the panel: nothing may cover it and
+            # there is no title bar to drag.
+            # Deliberately NOT FramelessWindowHint.  Under the kiosk's window
+            # manager a frameless parent wedges every child window the station
+            # opens -- dialogs, keyboards and message boxes alike -- and the
+            # station stops responding.  showFullScreen() already covers the
+            # panel, and the session starts matchbox with no title bar, so the
+            # hint bought nothing and cost every dialog.
             flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
-            self.setWindowFlags(
-                flags.FramelessWindowHint | flags.WindowStaysOnTopHint
-            )
+            self.setWindowFlags(flags.WindowStaysOnTopHint)
 
         from .admin_screen import AdminScreen
         from .history_screen import HistoryScreen
@@ -187,6 +192,9 @@ def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
 
     qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     qt_app.setApplicationName(APP_NAME)
+    # Told once, so no dialog has to be told separately -- an untold dialog
+    # reaches for a keyboard in its own window, which the kiosk cannot show.
+    set_kiosk(kiosk)
     qt_app.setApplicationVersion(__version__)
 
     # Grow the interface to suit the fitted panel.  The stylesheet is written

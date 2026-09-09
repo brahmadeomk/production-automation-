@@ -16,7 +16,9 @@ from ..db.database import rows_to_dicts
 from ..errors import StationError
 from ..security.auth import ROLES
 from .qt import QtCore, QtWidgets, exec_dialog
-from .widgets import Card, RecordTable, TouchLineEdit, confirm, notify
+from .widgets import (
+    Card, RecordTable, TouchLineEdit, confirm, dock_keyboard, notify,
+)
 
 
 class AdminScreen(QtWidgets.QWidget):
@@ -397,6 +399,8 @@ class UserDialog(QtWidgets.QDialog):
         buttons.addWidget(save)
         layout.addRow(buttons)
 
+        dock_keyboard(self)
+
     def _save(self) -> None:
         if self.password.text() != self.repeat.text():
             notify(self, "Passwords do not match", "Try again.", error=True)
@@ -453,6 +457,8 @@ class ProjectDialog(QtWidgets.QDialog):
 
         if project:
             self._load(project)
+
+        dock_keyboard(self)
 
     # ------------------------------------------------------------ tab: general
     def _general_tab(self) -> QtWidgets.QWidget:
