@@ -263,3 +263,113 @@ def test_keyboard_keys_stay_a_usable_touch_target(qt_app):
     """Shrinking to fit must not produce keys too small to hit."""
     height = TouchKeyboard._key_height(numeric=False, password=True)
     assert 38 <= height <= 64
+
+
+# --------------------------------------------------------------- kiosk exit
+@pytest.fixture
+def auth_station(tmp_path):
+    from progstation.db.database import Database
+    from progstation.security.auth import AuthManager
+
+    db = Database(":memory:")
+    auth = AuthManager(db)
+    auth.ensure_default_admin()
+    auth.set_password("admin", "adminpass1", actor="test")
+    auth.create_user("op1", "operator1", "operator", actor="test")
+    yield auth
+    db.close()
+
+
+def test_escape_cannot_leave_kiosk(qt_app, auth_station):
+    """QDialog rejects on Escape, which would drop the operator to the desktop.
+
+    Visibility is the observable that matters: QDialog.Rejected is 0, the same
+    as a dialog that has not finished, so result() cannot tell them apart.
+    """
+    from progstation.gui.login import LoginDialog
+
+    dialog = LoginDialog(auth_station, station_id="S", kiosk=True)
+    dialog.show()
+    assert dialog.isVisible()
+    dialog.reject()
+    assert dialog.isVisible(), "kiosk login closed on Escape"
+    assert not dialog._exit_authorised
+    dialog._exit_authorised = True          # what an authorised exit sets
+    dialog.reject()
+    assert not dialog.isVisible(), "authorised exit did not close the dialog"
+
+
+def test_escape_still_works_outside_kiosk(qt_app, auth_station):
+    from progstation.gui.login import LoginDialog
+
+    dialog = LoginDialog(auth_station, station_id="S", kiosk=False)
+    dialog.show()
+    dialog.reject()
+    assert not dialog.isVisible()
+
+
+def test_exit_button_asks_for_authorisation_in_kiosk(qt_app, auth_station, monkeypatch):
+    """The Exit button must go through the admin prompt, not straight out."""
+    from progstation.gui import login as login_module
+
+    asked = []
+    monkeypatch.setattr(
+        login_module.ExitKioskDialog, "authorise",
+        classmethod(lambda cls, parent, auth: asked.append(True) or False),
+    )
+    dialog = login_module.LoginDialog(auth_station, station_id="S", kiosk=True)
+    dialog.show()
+    dialog._request_exit()
+    assert asked, "Exit did not ask for administrator credentials"
+    assert dialog.isVisible(), "Exit closed the station without authorisation"
+
+
+def test_operator_cannot_authorise_a_kiosk_exit(qt_app, auth_station):
+    """Leaving kiosk mode exposes the desktop; that is an admin decision."""
+    from progstation.gui.login import ExitKioskDialog
+
+    dialog = ExitKioskDialog(None, auth_station)
+    dialog.username.setText("op1")
+    dialog.password.setText("operator1")
+    dialog._check()
+    assert dialog.authorised is False
+    assert "administrator" in dialog.message.text().lower()
+
+
+def test_wrong_password_cannot_authorise_a_kiosk_exit(qt_app, auth_station):
+    from progstation.gui.login import ExitKioskDialog
+
+    dialog = ExitKioskDialog(None, auth_station)
+    dialog.username.setText("admin")
+    dialog.password.setText("not-the-password")
+    dialog._check()
+    assert dialog.authorised is False
+
+
+def test_administrator_can_authorise_a_kiosk_exit(qt_app, auth_station):
+    from progstation.gui.login import ExitKioskDialog
+
+    dialog = ExitKioskDialog(None, auth_station)
+    dialog.username.setText("admin")
+    dialog.password.setText("adminpass1")
+    dialog._check()
+    assert dialog.authorised is True
+
+
+def test_kiosk_exit_attempts_are_audited(qt_app, auth_station):
+    """A refused attempt to reach the desktop is worth seeing afterwards."""
+    from progstation.gui.login import ExitKioskDialog
+
+    denied = ExitKioskDialog(None, auth_station)
+    denied.username.setText("op1")
+    denied.password.setText("operator1")
+    denied._check()
+
+    allowed = ExitKioskDialog(None, auth_station)
+    allowed.username.setText("admin")
+    allowed.password.setText("adminpass1")
+    allowed._check()
+
+    actions = {(row["Action"], row["Username"]) for row in auth_station.db.list_audit(20)}
+    assert ("kiosk.exit_denied", "op1") in actions
+    assert ("kiosk.exit", "admin") in actions

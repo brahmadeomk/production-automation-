@@ -122,6 +122,19 @@ Preview exactly what will be written before releasing a project:
 progstation project show TempSensor
 ```
 
+## Kiosk mode
+
+For a production station that boots straight into the application with no
+desktop behind it:
+
+```bash
+sudo /opt/progstation/deploy/kiosk-setup.sh && sudo reboot
+```
+
+X starts with the station as its only client — no taskbar, no menus, nothing to
+switch to — and Ctrl+Alt+F1..F6 are blocked. Leaving needs an administrator
+password and is written to the audit log. `--revert` restores the desktop.
+
 ## Documentation
 
 - [User manual](docs/USER_MANUAL.md) — operator and administrator guide, including ATmega328P fuse settings (§7)

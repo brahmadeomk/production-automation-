@@ -16,6 +16,8 @@ class LoginDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.auth = auth
         self.session: Optional[Session] = None
+        self.kiosk = kiosk
+        self._exit_authorised = False
         self.setWindowTitle("Operator Login")
         self.setModal(True)
         self.setMinimumWidth(420)
@@ -51,8 +53,8 @@ class LoginDialog(QtWidgets.QDialog):
         layout.addWidget(self.message)
 
         buttons = QtWidgets.QHBoxLayout()
-        cancel = QtWidgets.QPushButton("Exit")
-        cancel.clicked.connect(self.reject)
+        cancel = QtWidgets.QPushButton("Exit kiosk" if kiosk else "Exit")
+        cancel.clicked.connect(self._request_exit)
         buttons.addWidget(cancel)
         sign_in = QtWidgets.QPushButton("Sign in")
         sign_in.setObjectName("Primary")
@@ -79,6 +81,31 @@ class LoginDialog(QtWidgets.QDialog):
             session = self.auth.login(session.username, new_password)
         self.session = session
         self.accept()
+
+    # ------------------------------------------------------------------ exit
+    def _request_exit(self) -> None:
+        """Leave the application.
+
+        In kiosk mode the station is the only thing on the screen, so quitting
+        exposes the desktop.  That needs an administrator, not a stray tap on
+        a button next to the password field.
+        """
+        if not self.kiosk:
+            super().reject()
+            return
+        if ExitKioskDialog.authorise(self, self.auth):
+            self._exit_authorised = True
+            super().reject()
+
+    def reject(self) -> None:
+        """Swallow Escape and window-close while in kiosk mode.
+
+        QDialog rejects on Escape, which would drop the operator to the
+        desktop without so much as a prompt.
+        """
+        if self.kiosk and not self._exit_authorised:
+            return
+        super().reject()
 
     @classmethod
     def ask(cls, auth: AuthManager, parent=None, *, station_id: str = "",
@@ -150,3 +177,77 @@ class ChangePasswordDialog(QtWidgets.QDialog):
         if exec_dialog(dialog):
             return dialog.new_password
         return None
+
+
+class ExitKioskDialog(QtWidgets.QDialog):
+    """Ask for administrator credentials before leaving kiosk mode."""
+
+    def __init__(self, parent, auth: AuthManager):
+        super().__init__(parent)
+        self.auth = auth
+        self.authorised = False
+        self.setWindowTitle("Exit kiosk mode")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+        flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
+        self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+        header = QtWidgets.QLabel("Administrator sign-in required")
+        header.setObjectName("Title")
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        explain = QtWidgets.QLabel(
+            "Leaving kiosk mode closes the station and shows the desktop."
+        )
+        explain.setObjectName("Subtle")
+        explain.setWordWrap(True)
+        layout.addWidget(explain)
+
+        layout.addWidget(QtWidgets.QLabel("Username"))
+        self.username = TouchLineEdit(placeholder="Administrator username")
+        layout.addWidget(self.username)
+        layout.addWidget(QtWidgets.QLabel("Password"))
+        self.password = TouchLineEdit(placeholder="Password", password=True)
+        layout.addWidget(self.password)
+
+        self.message = QtWidgets.QLabel("")
+        self.message.setStyleSheet("color: #c5221f; font-weight: 600;")
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+
+        buttons = QtWidgets.QHBoxLayout()
+        cancel = QtWidgets.QPushButton("Cancel")
+        cancel.clicked.connect(super().reject)
+        buttons.addWidget(cancel)
+        confirm = QtWidgets.QPushButton("Exit kiosk")
+        confirm.setObjectName("Danger")
+        confirm.clicked.connect(self._check)
+        buttons.addWidget(confirm, 2)
+        layout.addLayout(buttons)
+
+    def _check(self) -> None:
+        try:
+            session = self.auth.login(self.username.text(), self.password.text())
+        except AuthError as exc:
+            self.message.setText(str(exc))
+            self.password.clear()
+            return
+        if not session.is_admin:
+            # Audited: an operator trying to reach the desktop is worth seeing.
+            self.auth.db.audit(session.username, "kiosk.exit_denied",
+                               detail="not an administrator")
+            self.message.setText("Only an administrator can leave kiosk mode.")
+            self.password.clear()
+            return
+        self.auth.db.audit(session.username, "kiosk.exit")
+        self.authorised = True
+        self.accept()
+
+    @classmethod
+    def authorise(cls, parent, auth: AuthManager) -> bool:
+        dialog = cls(parent, auth)
+        exec_dialog(dialog)
+        return dialog.authorised

@@ -446,7 +446,42 @@ sudo systemctl restart progstation
 journalctl -u progstation -n 40 --no-pager
 ```
 
-### 9.2 Autostarting inside the desktop
+### 9.2 Dedicated kiosk mode
+
+For a station that must boot straight into the application with nothing an
+operator can reach behind it:
+
+```bash
+sudo /opt/progstation/deploy/kiosk-setup.sh
+sudo reboot
+```
+
+This replaces the desktop session rather than locking one down. X starts with
+the station as its only client, under a window manager that has no taskbar, no
+menus and no way to raise another window — there is nothing to switch to
+because nothing else is running. Locking down a full desktop means disabling
+the panel, the right-click menu, the file manager and the window switcher
+individually, and any one of them left enabled is a way out.
+
+It also sets `DontVTSwitch`, so Ctrl+Alt+F1..F6 cannot reach a login console,
+and boots to `multi-user.target` so the desktop never starts.
+
+**Leaving requires an administrator.** The Exit button on the login screen
+prompts for administrator credentials; an operator account is refused, and both
+the refusal and the successful exit are written to the audit log
+(`kiosk.exit_denied`, `kiosk.exit`). Escape no longer closes the login screen.
+
+For maintenance, use SSH. To restore the normal desktop:
+
+```bash
+sudo /opt/progstation/deploy/kiosk-setup.sh --revert
+sudo reboot
+```
+
+> Set an administrator password you can retrieve before enabling this. With the
+> desktop gone and the exit behind a password, SSH is the remaining way in.
+
+### 9.3 Autostarting inside the desktop
 
 On a Pi that boots to the desktop, running the station as a desktop
 application is simpler than driving X from a system service:
@@ -460,7 +495,7 @@ sudo systemctl disable --now progstation # avoid two copies fighting for the scr
 
 Log out and back in. Use either this **or** the systemd service, never both.
 
-### 9.3 Interface size
+### 9.4 Interface size
 
 The interface is written for the smallest supported panel (800x480) and scales
 up with the screen, to a limit of 1.6x.
@@ -560,7 +595,7 @@ display 1024x600, UI scale 1.25
 If that disagrees with `xdpyinfo`, the station attached to a different display
 — check `DISPLAY` in `/etc/progstation/display.env`.
 
-### 9.4 Common symptoms
+### 9.5 Common symptoms
 
 
 

@@ -122,7 +122,9 @@ else
         log "Desktop session detected - display.env set to xcb"
     fi
 fi
+install -d -m 0755 "$PREFIX/deploy"
 install -m 0644 "$SOURCE_DIR/deploy/progstation-kiosk.desktop" "$PREFIX/deploy/" 2>/dev/null || true
+install -m 0755 "$SOURCE_DIR/deploy/kiosk-setup.sh" "$PREFIX/deploy/" 2>/dev/null || true
 install -m 0644 "$SOURCE_DIR/deploy/progstation.service"        /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.service" /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.timer"   /etc/systemd/system/
