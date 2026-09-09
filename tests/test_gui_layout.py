@@ -320,12 +320,16 @@ def test_exit_button_asks_for_authorisation_in_kiosk(qt_app, auth_station, monke
     asked = []
     monkeypatch.setattr(
         login_module.ExitKioskDialog, "authorise",
-        classmethod(lambda cls, parent, auth: asked.append(True) or False),
+        classmethod(lambda cls, parent, auth, **kw: asked.append(kw) or False),
     )
     dialog = login_module.LoginDialog(auth_station, station_id="S", kiosk=True)
     dialog.show()
     dialog._request_exit()
     assert asked, "Exit did not ask for administrator credentials"
+    assert asked[0].get("kiosk") is True, (
+        "the exit prompt was not told it is running under the kiosk window "
+        "manager, so it would open as a separate window the WM collapses"
+    )
     assert dialog.isVisible(), "Exit closed the station without authorisation"
 
 
@@ -476,4 +480,90 @@ def test_error_line_takes_no_room_until_there_is_an_error(qt_app, auth_station):
         assert dialog.message.text() == "something went wrong"
         dialog._say("")
         assert dialog.message.isHidden()
+        dialog.close()
+
+
+# ------------------------------------------------ embedded exit-prompt keyboard
+def _kiosk_exit(qt_app, auth):
+    from progstation.gui.login import ExitKioskDialog
+    from progstation.gui.style import build_stylesheet, scale_for
+
+    qt_app.setStyleSheet(
+        build_stylesheet(scale_for(qt_app.primaryScreen().geometry().height()))
+    )
+    dialog = ExitKioskDialog(None, auth, kiosk=True)
+    dialog.setGeometry(qt_app.primaryScreen().geometry())
+    dialog.show()
+    qt_app.processEvents()
+    return dialog
+
+
+def test_kiosk_exit_prompt_carries_its_own_keyboard(qt_app, auth_station):
+    """The exit prompt needs an admin password typed on a touchscreen. Asking
+    for it through a second keyboard window left the operator with a dialog
+    they could not fill in, so the Exit button did nothing they could see."""
+    dialog = _kiosk_exit(qt_app, auth_station)
+    try:
+        assert getattr(dialog, "pad", None) is not None
+        assert dialog.pad.isVisibleTo(dialog)
+        assert not any(
+            button.text() == "⌨"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
+    finally:
+        dialog.close()
+
+
+def test_kiosk_exit_prompt_fits_the_panel(qt_app, auth_station):
+    """Under matchbox the prompt was mapped 420x30 -- a sliver with no fields
+    on it. It has to ask for its full height and stay inside the screen."""
+    dialog = _kiosk_exit(qt_app, auth_station)
+    try:
+        screen = qt_app.primaryScreen().geometry()
+        assert dialog.minimumSizeHint().height() <= screen.height(), (
+            f"exit prompt needs {dialog.minimumSizeHint().height()} px,"
+            f" panel is {screen.height()}"
+        )
+        assert dialog.username.isVisibleTo(dialog)
+        assert dialog.password.isVisibleTo(dialog)
+        assert len({b.height() for b in dialog.pad.keys}) == 1
+        assert dialog.pad.keys[0].height() >= 36
+    finally:
+        dialog.close()
+
+
+def test_kiosk_exit_keyboard_types_into_the_focused_field(qt_app, auth_station):
+    dialog = _kiosk_exit(qt_app, auth_station)
+    try:
+        dialog.username.edit.setFocus()
+        qt_app.processEvents()
+        for char in "admin":
+            dialog.pad._press(char)
+
+        dialog.password.edit.setFocus()
+        qt_app.processEvents()
+        for char in "pw":
+            dialog.pad._press(char)
+
+        assert dialog.username.text() == "admin"
+        assert dialog.password.text() == "pw"
+    finally:
+        dialog.close()
+
+
+def test_windowed_exit_prompt_keeps_the_keyboard_button(qt_app, auth_station):
+    """Off the kiosk there is a real window manager and a desktop keyboard is
+    fine, so the compact embedded pad is not forced on the maintainer."""
+    from progstation.gui.login import ExitKioskDialog
+
+    dialog = ExitKioskDialog(None, auth_station, kiosk=False)
+    dialog.show()
+    qt_app.processEvents()
+    try:
+        assert getattr(dialog, "pad", None) is None
+        assert any(
+            button.text() == "⌨"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
+    finally:
         dialog.close()

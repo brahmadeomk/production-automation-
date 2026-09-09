@@ -187,7 +187,7 @@ class LoginDialog(_MessageMixin, QtWidgets.QDialog):
         if not self.kiosk:
             super().reject()
             return
-        if ExitKioskDialog.authorise(self, self.auth):
+        if ExitKioskDialog.authorise(self, self.auth, kiosk=self.kiosk):
             self._exit_authorised = True
             super().reject()
 
@@ -275,22 +275,37 @@ class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
 
 
 class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
-    """Ask for administrator credentials before leaving kiosk mode."""
+    """Ask for administrator credentials before leaving kiosk mode.
 
-    def __init__(self, parent, auth: AuthManager):
+    Laid out like the kiosk login, and for the same reason: the kiosk window
+    manager collapsed this dialog to a 30 px sliver and gave it no usable
+    keyboard.  It sizes itself to the panel and carries its own keys.
+    """
+
+    def __init__(self, parent, auth: AuthManager, *, kiosk: bool = True):
         super().__init__(parent)
         self.auth = auth
+        self.kiosk = kiosk
         self.authorised = False
         self.setWindowTitle("Exit kiosk mode")
         self.setModal(True)
-        self.setMinimumWidth(420)
-        flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
-        self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+        if kiosk:
+            flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
+            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(10)
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.addStretch(1)
+        column = QtWidgets.QWidget()
+        column.setMaximumWidth(560)
+        outer.addWidget(column, 0)
+        outer.addStretch(1)
+
+        layout = QtWidgets.QVBoxLayout(column)
+        layout.setSpacing(6 if kiosk else 10)
+
         header = QtWidgets.QLabel("Administrator sign-in required")
         header.setObjectName("Title")
+        header.setAlignment(ALIGN_CENTER)
         header.setWordWrap(True)
         layout.addWidget(header)
 
@@ -298,14 +313,17 @@ class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
             "Leaving kiosk mode closes the station and shows the desktop."
         )
         explain.setObjectName("Subtle")
+        explain.setAlignment(ALIGN_CENTER)
         explain.setWordWrap(True)
         layout.addWidget(explain)
 
-        layout.addWidget(QtWidgets.QLabel("Username"))
-        self.username = TouchLineEdit(placeholder="Administrator username")
+        self.username = TouchLineEdit(
+            placeholder="Administrator username", keyboard_button=not kiosk
+        )
         layout.addWidget(self.username)
-        layout.addWidget(QtWidgets.QLabel("Password"))
-        self.password = TouchLineEdit(placeholder="Password", password=True)
+        self.password = TouchLineEdit(
+            placeholder="Password", password=True, keyboard_button=not kiosk
+        )
         layout.addWidget(self.password)
 
         self.message = QtWidgets.QLabel("")
@@ -316,13 +334,56 @@ class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
 
         buttons = QtWidgets.QHBoxLayout()
         cancel = QtWidgets.QPushButton("Cancel")
-        cancel.clicked.connect(super().reject)
+        cancel.clicked.connect(self._cancel)
         buttons.addWidget(cancel)
         confirm = QtWidgets.QPushButton("Exit kiosk")
         confirm.setObjectName("Danger")
         confirm.clicked.connect(self._check)
         buttons.addWidget(confirm, 2)
         layout.addLayout(buttons)
+
+        self._fitted = True
+        if kiosk:
+            self.setStyleSheet(
+                "QLineEdit { min-height: 30px; max-height: 40px; padding: 4px 8px; }"
+                "QPushButton { min-height: 38px; max-height: 46px; padding: 4px 10px; }"
+            )
+            self.pad = KeyboardPad(
+                column, key_height=keyboard_key_height(numeric=False, password=True)
+            )
+            self.pad.set_target(self.username.edit)
+            layout.insertWidget(layout.count() - 1, self.pad)
+            self.username.edit.installEventFilter(self)
+            self.password.edit.installEventFilter(self)
+            self.username.edit.setFocus()
+            self._fitted = False
+
+    def showEvent(self, event):  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if getattr(self, "pad", None) is not None and not self._fitted:
+            self._fitted = True
+            fit_with_keyboard(self, self.pad)
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt naming
+        focus_in = (
+            QtCore.QEvent.Type.FocusIn if hasattr(QtCore.QEvent, "Type")
+            else QtCore.QEvent.FocusIn
+        )
+        if event.type() == focus_in and getattr(self, "pad", None) is not None:
+            self.pad.set_target(watched)
+        return super().eventFilter(watched, event)
+
+    def _cancel(self) -> None:
+        self.authorised = False
+        super().reject()
+
+    def reject(self) -> None:
+        """Escape backs out to the locked login, never past it.
+
+        Cancelling the prompt is safe -- the station stays in kiosk mode -- but
+        it must leave ``authorised`` False whichever way it was dismissed.
+        """
+        self._cancel()
 
     def _check(self) -> None:
         try:
@@ -343,7 +404,13 @@ class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
         self.accept()
 
     @classmethod
-    def authorise(cls, parent, auth: AuthManager) -> bool:
-        dialog = cls(parent, auth)
+    def authorise(cls, parent, auth: AuthManager, *, kiosk: bool = True) -> bool:
+        dialog = cls(parent, auth, kiosk=kiosk)
+        if kiosk:
+            # Sized to the panel before it is shown: left to itself the kiosk
+            # window manager collapsed this to a 30 px sliver.
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen is not None:
+                dialog.setGeometry(screen.geometry())
         exec_dialog(dialog)
         return dialog.authorised

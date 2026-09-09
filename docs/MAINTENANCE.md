@@ -482,6 +482,13 @@ prompts for administrator credentials; an operator account is refused, and both
 the refusal and the successful exit are written to the audit log
 (`kiosk.exit_denied`, `kiosk.exit`). Escape no longer closes the login screen.
 
+The exit prompt carries its own keyboard too, for the same reason as the login
+screen. When it relied on a separate keyboard window the kiosk window manager
+gave it a 30 px sliver with no fields on it, so Exit looked like a button that
+did nothing. Off the kiosk — a maintainer running `progstation gui` on the
+desktop — the prompt keeps the ordinary keyboard button instead, since a full
+window manager places a second window correctly.
+
 For maintenance, use SSH. To restore the normal desktop:
 
 ```bash
@@ -618,6 +625,7 @@ If that disagrees with `xdpyinfo`, the station attached to a different display
 | Falls back to a window | Expected under X/Wayland; `showFullScreen` still applies |
 | Window smaller than the panel | Start with `--kiosk` (frameless, fullscreen, always on top). The systemd unit already does |
 | Right-hand tabs cut off | The layout is sized for 800x480; a narrower panel will clip. Report the resolution |
+| Exit does nothing in kiosk mode | Fixed: the prompt now embeds its keyboard. On an older build the window manager collapsed it to a sliver off the visible area |
 
 Test the GUI without the panel:
 
