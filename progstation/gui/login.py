@@ -144,7 +144,9 @@ class LoginDialog(_MessageMixin, QtWidgets.QDialog):
             self.password.clear()
             return
         if session.must_change_password:
-            new_password = ChangePasswordDialog.ask(self, self.auth, session.username)
+            new_password = ChangePasswordDialog.ask(
+                self, self.auth, session.username, kiosk=self.kiosk
+            )
             if not new_password:
                 self._say("A password change is required before you can continue.")
                 return
@@ -215,27 +217,56 @@ class LoginDialog(_MessageMixin, QtWidgets.QDialog):
 
 
 class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
-    def __init__(self, parent, auth: AuthManager, username: str):
+    """Set a new password, on the way in when the account is flagged for it.
+
+    This sits in the middle of the sign-in path, so on the kiosk it is laid
+    out like the login screen and carries its own keys.  Relying on a separate
+    keyboard window left the operator on a dialog they could not fill in and
+    could not get past, so the programming screen never arrived.
+    """
+
+    def __init__(self, parent, auth: AuthManager, username: str,
+                 *, kiosk: bool = False):
         super().__init__(parent)
         self.auth = auth
         self.username = username
+        self.kiosk = kiosk
         self.new_password: Optional[str] = None
         self.setWindowTitle("Change Password")
         self.setModal(True)
-        self.setMinimumWidth(420)
+        if kiosk:
+            flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
+            self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
+        else:
+            self.setMinimumWidth(420)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(10)
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.addStretch(1)
+        column = QtWidgets.QWidget()
+        column.setMaximumWidth(560)
+        outer.addWidget(column, 0)
+        outer.addStretch(1)
+
+        layout = QtWidgets.QVBoxLayout(column)
+        layout.setSpacing(6 if kiosk else 10)
         header = QtWidgets.QLabel(f"Set a new password for '{username}'")
         header.setObjectName("Title")
         header.setWordWrap(True)
+        if kiosk:
+            header.setAlignment(ALIGN_CENTER)
         layout.addWidget(header)
 
-        layout.addWidget(QtWidgets.QLabel("New password"))
-        self.first = TouchLineEdit(placeholder="New password", password=True)
+        if not kiosk:
+            layout.addWidget(QtWidgets.QLabel("New password"))
+        self.first = TouchLineEdit(
+            placeholder="New password", password=True, keyboard_button=not kiosk
+        )
         layout.addWidget(self.first)
-        layout.addWidget(QtWidgets.QLabel("Repeat password"))
-        self.second = TouchLineEdit(placeholder="Repeat password", password=True)
+        if not kiosk:
+            layout.addWidget(QtWidgets.QLabel("Repeat password"))
+        self.second = TouchLineEdit(
+            placeholder="Repeat password", password=True, keyboard_button=not kiosk
+        )
         layout.addWidget(self.second)
 
         self.message = QtWidgets.QLabel("")
@@ -254,6 +285,37 @@ class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
         buttons.addWidget(save, 2)
         layout.addLayout(buttons)
 
+        self._fitted = True
+        if kiosk:
+            self.setStyleSheet(
+                "QLineEdit { min-height: 30px; max-height: 40px; padding: 4px 8px; }"
+                "QPushButton { min-height: 38px; max-height: 46px; padding: 4px 10px; }"
+            )
+            self.pad = KeyboardPad(
+                column, key_height=keyboard_key_height(numeric=False, password=True)
+            )
+            self.pad.set_target(self.first.edit)
+            layout.insertWidget(layout.count() - 1, self.pad)
+            self.first.edit.installEventFilter(self)
+            self.second.edit.installEventFilter(self)
+            self.first.edit.setFocus()
+            self._fitted = False
+
+    def showEvent(self, event):  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if getattr(self, "pad", None) is not None and not self._fitted:
+            self._fitted = True
+            fit_with_keyboard(self, self.pad)
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt naming
+        focus_in = (
+            QtCore.QEvent.Type.FocusIn if hasattr(QtCore.QEvent, "Type")
+            else QtCore.QEvent.FocusIn
+        )
+        if event.type() == focus_in and getattr(self, "pad", None) is not None:
+            self.pad.set_target(watched)
+        return super().eventFilter(watched, event)
+
     def _save(self) -> None:
         if self.first.text() != self.second.text():
             self._say("The two passwords do not match.")
@@ -267,8 +329,13 @@ class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
         self.accept()
 
     @classmethod
-    def ask(cls, parent, auth: AuthManager, username: str) -> Optional[str]:
-        dialog = cls(parent, auth, username)
+    def ask(cls, parent, auth: AuthManager, username: str,
+            *, kiosk: bool = False) -> Optional[str]:
+        dialog = cls(parent, auth, username, kiosk=kiosk)
+        if kiosk:
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen is not None:
+                dialog.setGeometry(screen.geometry())
         if exec_dialog(dialog):
             return dialog.new_password
         return None

@@ -567,3 +567,111 @@ def test_windowed_exit_prompt_keeps_the_keyboard_button(qt_app, auth_station):
         )
     finally:
         dialog.close()
+
+
+# ------------------------------------------ forced password change on the way in
+def _kiosk_change_password(qt_app, auth):
+    from progstation.gui.login import ChangePasswordDialog
+    from progstation.gui.style import build_stylesheet, scale_for
+
+    qt_app.setStyleSheet(
+        build_stylesheet(scale_for(qt_app.primaryScreen().geometry().height()))
+    )
+    dialog = ChangePasswordDialog(None, auth, "admin", kiosk=True)
+    dialog.setGeometry(qt_app.primaryScreen().geometry())
+    dialog.show()
+    qt_app.processEvents()
+    return dialog
+
+
+def test_forced_password_change_has_a_keyboard_in_kiosk(qt_app, auth_station):
+    """This dialog sits between Sign in and the programming screen. Without
+    keys on it the operator cannot get past it, and the station looks like it
+    ignored the sign-in."""
+    dialog = _kiosk_change_password(qt_app, auth_station)
+    try:
+        assert getattr(dialog, "pad", None) is not None
+        assert dialog.pad.isVisibleTo(dialog)
+        assert not any(
+            button.text() == "⌨"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
+    finally:
+        dialog.close()
+
+
+def test_forced_password_change_fits_the_panel(qt_app, auth_station):
+    dialog = _kiosk_change_password(qt_app, auth_station)
+    try:
+        screen = qt_app.primaryScreen().geometry()
+        assert dialog.minimumSizeHint().height() <= screen.height(), (
+            f"change-password needs {dialog.minimumSizeHint().height()} px,"
+            f" panel is {screen.height()}"
+        )
+        assert dialog.first.isVisibleTo(dialog)
+        assert dialog.second.isVisibleTo(dialog)
+        assert len({b.height() for b in dialog.pad.keys}) == 1
+        assert dialog.pad.keys[0].height() >= 36
+    finally:
+        dialog.close()
+
+
+def test_forced_password_change_types_into_both_fields(qt_app, auth_station):
+    dialog = _kiosk_change_password(qt_app, auth_station)
+    try:
+        dialog.first.edit.setFocus()
+        qt_app.processEvents()
+        for char in "newpass99":
+            dialog.pad._press(char)
+        dialog.second.edit.setFocus()
+        qt_app.processEvents()
+        for char in "newpass99":
+            dialog.pad._press(char)
+        assert dialog.first.text() == "newpass99"
+        assert dialog.second.text() == "newpass99"
+    finally:
+        dialog.close()
+
+
+def test_windowed_password_change_keeps_the_keyboard_button(qt_app, auth_station):
+    from progstation.gui.login import ChangePasswordDialog
+
+    dialog = ChangePasswordDialog(None, auth_station, "admin")
+    dialog.show()
+    qt_app.processEvents()
+    try:
+        assert getattr(dialog, "pad", None) is None
+        assert any(
+            button.text() == "⌨"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
+    finally:
+        dialog.close()
+
+
+def test_kiosk_login_hands_the_kiosk_flag_to_the_password_change(qt_app, auth_station,
+                                                                monkeypatch):
+    """A first sign-in must not drop out of the kiosk layout half way."""
+    from progstation.gui import login as login_module
+
+    auth_station.create_user(
+        "newop", "temppass1", "operator", actor="test", must_change_password=True
+    )
+    asked = []
+    monkeypatch.setattr(
+        login_module.ChangePasswordDialog, "ask",
+        classmethod(lambda cls, parent, auth, username, **kw: asked.append(kw) or None),
+    )
+    dialog = login_module.LoginDialog(auth_station, station_id="S", kiosk=True)
+    dialog.show()
+    dialog.username.setText("newop")
+    dialog.password.setText("temppass1")
+    dialog._attempt()
+    try:
+        assert asked, "a flagged account was let past without a password change"
+        assert asked[0].get("kiosk") is True, (
+            "the password-change dialog was not told it is on the kiosk, so it "
+            "would rely on a separate keyboard window the operator cannot use"
+        )
+    finally:
+        dialog.close()
