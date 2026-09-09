@@ -479,6 +479,59 @@ If the keys ever render as a thin strip while Shift and Space look normal, an
 application style sheet is overriding their height -- a style sheet
 `min-height` beats `setFixedHeight()`.
 
+### Forcing the panel's native mode
+
+A panel driven at the wrong mode is rescaled and looks soft. Compare the two
+markers in `xrandr`: `+` is the mode the panel reports as native, `*` is the one
+in use.
+
+```
+1024x600      59.82*+      <- correct: both on the native mode
+1024x600      59.82 +      <- native, but something else is active
+1280x720      60.00*
+```
+
+Set it for the current session:
+
+```bash
+xrandr --output HDMI-1 --mode 1024x600
+```
+
+To make it survive a reboot on Raspberry Pi OS Bookworm/Trixie, use the kernel
+command line. The old `hdmi_group` / `hdmi_mode` / `hdmi_cvt` settings in
+`config.txt` are **ignored** by the KMS driver (`vc4-kms-v3d`) these releases
+use — if they are present and appear to be forcing a mode, remove them.
+
+```bash
+sudo nano /boot/firmware/cmdline.txt
+```
+
+Append to the single existing line (do not add a new line):
+
+```
+video=HDMI-A-1:1024x600@60
+```
+
+Reboot, then confirm the console and X agree:
+
+```bash
+xrandr | grep '\*'
+journalctl -u progstation | grep "UI scale"
+```
+
+If the desktop session is the only thing that needs it, an autostart entry
+works too and avoids touching the boot files:
+
+```bash
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/panel-mode.desktop <<'ENTRY'
+[Desktop Entry]
+Type=Application
+Name=Panel native mode
+Exec=xrandr --output HDMI-1 --mode 1024x600
+ENTRY
+```
+
 ### Confirming the resolution
 
 ```bash
