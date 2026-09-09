@@ -466,6 +466,10 @@ individually, and any one of them left enabled is a way out.
 It also sets `DontVTSwitch`, so Ctrl+Alt+F1..F6 cannot reach a login console,
 and boots to `multi-user.target` so the desktop never starts.
 
+The session drives the panel at the mode `xrandr` marks native (`+`). A desktop
+autostart entry would never run here, since there is no desktop — so the
+resolution is set by `.xinitrc` instead.
+
 **Leaving requires an administrator.** The Exit button on the login screen
 prompts for administrator credentials; an operator account is refused, and both
 the refusal and the successful exit are written to the audit log

@@ -61,6 +61,16 @@ usermod -d "/home/$KIOSK_USER" "$KIOSK_USER" 2>/dev/null || true
 cat > "/home/$KIOSK_USER/.xinitrc" <<'SESSION'
 #!/bin/sh
 # The station's entire X session. No desktop, no panel, no file manager.
+
+# Drive the panel at the mode it reports as native (the one xrandr marks '+').
+# There is no desktop session here, so an autostart entry would never run, and
+# a panel driven at the wrong mode is rescaled and looks soft.
+output=$(xrandr | awk '/ connected/ {print $1; exit}')
+native=$(xrandr | awk '/^ / && /\+/ {print $1; exit}')
+if [ -n "$output" ] && [ -n "$native" ]; then
+    xrandr --output "$output" --mode "$native" 2>/dev/null || true
+fi
+
 xset s off          # no screen blanking
 xset -dpms          # no power management
 xset s noblank
