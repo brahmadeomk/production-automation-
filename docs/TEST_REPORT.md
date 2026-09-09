@@ -94,10 +94,55 @@ the automated suite. Record results here during site acceptance:
 | 4.6 | Buzzer (GPIO22): 1 beep PASS, 3 beeps FAIL | `selftest --outputs`, programming cycle | **PASS** |
 | 4.7 | Start button (GPIO23) triggers a cycle | Press with `require_hardware_start: true` | ☐ not yet tested |
 | 4.8 | Fixture detect (GPIO24) blocks an open fixture | Start with the fixture open → `E_FIXTURE_OPEN` | ☐ not yet tested |
-| 4.9 | Touchscreen fullscreen and touch-accurate | Visual, all four screens | **PASS** — running on the 7-inch panel |
+| 4.9 | Touchscreen fullscreen and touch-accurate | Visual, all four screens | **PASS** — running full screen on the 1024x600 panel |
 | 4.10 | Backup reaches the real SMB share | `progstation backup run` | ☐ not yet configured |
-| 4.11 | Station starts on boot | `sudo reboot` | ☐ not yet tested |
+| 4.11 | Station starts on boot | `sudo reboot` | **PASS** — kiosk session starts unattended, 2026-09-09 |
 | 4.12 | Power loss mid-cycle does not consume a serial | Pull power during programming | ☐ not yet tested |
+| 4.13 | Operator signs in and reaches the programming screen | Kiosk sign-in on the panel | **PASS** — 2026-09-09, see 4.13a |
+| 4.14 | Forced password change is completable on the panel | First sign-in of a flagged account | ☐ not confirmed on the station — fixed and verified on the bench rig (4.13a); exercise it on the next new account |
+| 4.15 | Kiosk exit requires an administrator | Exit → admin credentials | **PASS** — 2026-09-09, admin accepted. Operator refusal is covered by the automated suite, not yet re-checked on the panel |
+| 4.16 | Operator account can be added from the panel | Admin → Users → Add user | **PASS** — 2026-09-09 |
+
+### 4.13a Kiosk interaction evidence
+
+Commissioning found the station unusable on the panel in four places: the
+login keyboard was invisible, the Exit button appeared dead, a first sign-in
+stopped before the programming screen, and the admin dialogs could not be
+filled in. All four had one cause.
+
+Under the kiosk's window manager (`matchbox`), a **frameless** parent window
+wedges every child window the application opens; the application stops
+responding. Measured on a bench rig reproducing the station's environment
+(Xvfb + matchbox at 1024x600), repeated five times:
+
+| Parent window flags | Child window opens |
+|---|---|
+| plain | 5 / 5 |
+| frameless | **0 / 5** |
+| always-on-top | 5 / 5 |
+| frameless + always-on-top | 1 / 5 |
+
+A plain `QMessageBox` is enough to trigger it, so an ordinary validation
+message such as "Passwords do not match" would have frozen the station in
+front of an operator.
+
+The frameless hint was removed from the main window and the sign-in dialogs.
+`showFullScreen()` covers the panel on its own and the kiosk session starts
+matchbox with `-use_titlebar no`, so nothing was lost: the window still
+measures 1024x600 at 0,0. Every dialog that asks for typed input now carries
+its own keyboard rather than opening one in a second window.
+
+Two regression tests hold this in place: one asserts no kiosk window is
+frameless, and a sweep walks every dialog in the package and fails if one has
+fields but no keyboard, keeps a separate-window keyboard button, overflows the
+panel, or does not type into the focused field. A newly added dialog with no
+entry in the sweep fails it rather than being skipped.
+
+Confirmed on the station itself on 2026-09-09: sign-in through to the
+programming screen, kiosk exit, and operator addition (4.13, 4.15, 4.16). The
+forced password change (4.14) was fixed and verified on the bench rig but has
+not been repeated on the station; it appears only on an account's first
+sign-in, so exercise it on the next new account.
 
 ### 4.4a EEPROM verification evidence (serial 000001)
 
@@ -129,9 +174,11 @@ fields on the next unit programmed with the metadata restored.
    analytics dashboard are out of scope for this release. The `--json` CLI
    output and the stable `ErrorCode` taxonomy are the intended integration
    surface.
-2. **The GUI is verified offscreen, not on a physical panel.** Screens build,
-   navigate and run cycles correctly under `QT_QPA_PLATFORM=offscreen`;
-   touch accuracy and panel rotation must be confirmed on the station (4.9).
+2. **The GUI is verified on the station's own panel** (4.9, 4.13-4.16) as well
+   as offscreen under `QT_QPA_PLATFORM=offscreen`. Panel rotation is not
+   exercised. Note that offscreen and windowed testing cannot reproduce the
+   kiosk window manager, which is where the faults in 4.13a were found — the
+   bench rig in that section exists for exactly that reason.
 3. **Backup is verified against a local directory** standing in for a mounted
    share. The CIFS mount itself must be confirmed on site (4.10).
 4. **Timing figures in this report come from the simulated backend** and do not
