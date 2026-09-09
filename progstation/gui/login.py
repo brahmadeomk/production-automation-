@@ -7,10 +7,28 @@ from typing import Optional
 from ..errors import AuthError
 from ..security.auth import AuthManager, Session
 from .qt import ALIGN_CENTER, QtCore, QtWidgets, exec_dialog
-from .widgets import TouchLineEdit
+from .qt import ECHO_PASSWORD
+from .widgets import (
+    KeyboardPad,
+    TouchLineEdit,
+    fit_with_keyboard,
+    keyboard_key_height,
+)
 
 
-class LoginDialog(QtWidgets.QDialog):
+class _MessageMixin:
+    """Shows an error line only when there is an error.
+
+    Reserving a blank line costs height that the on-screen keyboard needs on a
+    short panel.
+    """
+
+    def _say(self, text: str) -> None:
+        self.message.setText(text)
+        self.message.setVisible(bool(text))
+
+
+class LoginDialog(_MessageMixin, QtWidgets.QDialog):
     def __init__(self, auth: AuthManager, parent=None, *, station_id: str = "",
                  kiosk: bool = False):
         super().__init__(parent)
@@ -25,31 +43,58 @@ class LoginDialog(QtWidgets.QDialog):
             flags = QtCore.Qt.WindowType if hasattr(QtCore.Qt, "WindowType") else QtCore.Qt
             self.setWindowFlags(flags.FramelessWindowHint | flags.WindowStaysOnTopHint)
 
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(12)
+        # In kiosk the dialog covers the whole panel, so the form is centred at
+        # a readable width instead of stretching a two-field login across a
+        # metre of screen.
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.addStretch(1)
+        column = QtWidgets.QWidget()
+        column.setMaximumWidth(560)
+        outer.addWidget(column, 0)
+        outer.addStretch(1)
 
-        title = QtWidgets.QLabel("Sign in")
+        layout = QtWidgets.QVBoxLayout(column)
+        # The kiosk login carries a keyboard as well as the form, so it is laid
+        # out compactly: one title line, and the fields identified by their
+        # placeholders rather than separate labels.  Without that the Sign in
+        # button ends up below the bottom of the panel.
+        layout.setSpacing(6 if kiosk else 12)
+
+        title = QtWidgets.QLabel(
+            f"Sign in — {station_id}" if (kiosk and station_id) else "Sign in"
+        )
         title.setObjectName("Title")
         title.setAlignment(ALIGN_CENTER)
         layout.addWidget(title)
 
-        if station_id:
+        if station_id and not kiosk:
             station = QtWidgets.QLabel(station_id)
             station.setObjectName("Subtle")
             station.setAlignment(ALIGN_CENTER)
             layout.addWidget(station)
 
-        layout.addWidget(QtWidgets.QLabel("Username"))
-        self.username = TouchLineEdit(placeholder="Username")
+        if not kiosk:
+            layout.addWidget(QtWidgets.QLabel("Username"))
+        self.username = TouchLineEdit(placeholder="Username", keyboard_button=not kiosk)
         layout.addWidget(self.username)
 
-        layout.addWidget(QtWidgets.QLabel("Password"))
-        self.password = TouchLineEdit(placeholder="Password", password=True)
+        if not kiosk:
+            layout.addWidget(QtWidgets.QLabel("Password"))
+        self.password = TouchLineEdit(
+            placeholder="Password", password=True, keyboard_button=not kiosk
+        )
         layout.addWidget(self.password)
+
+        self.reveal = QtWidgets.QCheckBox("Show characters")
+        self.reveal.toggled.connect(self._set_reveal)
+        layout.addWidget(self.reveal)
 
         self.message = QtWidgets.QLabel("")
         self.message.setStyleSheet("color: #c5221f; font-weight: 600;")
         self.message.setWordWrap(True)
+        # Reserving a line for an error that is not there costs height the
+        # keyboard needs; show it only when there is something to say.
+        self.message.setVisible(False)
         layout.addWidget(self.message)
 
         buttons = QtWidgets.QHBoxLayout()
@@ -63,6 +108,31 @@ class LoginDialog(QtWidgets.QDialog):
         buttons.addWidget(sign_in, 2)
         layout.addLayout(buttons)
 
+        if kiosk:
+            # There is no desktop keyboard behind a kiosk, and a keyboard in
+            # its own window is at the mercy of a minimal window manager, so
+            # put it on the screen itself.
+            self.pad = KeyboardPad(
+                column, key_height=keyboard_key_height(numeric=False, password=True)
+            )
+            self.pad.set_target(self.username.edit)
+            # Above the buttons: the operator types, then presses Sign in.
+            layout.insertWidget(layout.count() - 1, self.pad)
+            self.username.edit.installEventFilter(self)
+            self.password.edit.installEventFilter(self)
+            self.username.edit.setFocus()
+            # Compact the inputs and buttons: at the panel's scale two fields
+            # alone took 144 px, which the keyboard needs more than they do.
+            # The pad styles its own keys, and #Key wins over this rule.
+            self.setStyleSheet(
+                "QLineEdit { min-height: 30px; max-height: 40px; padding: 4px 8px; }"
+                "QPushButton { min-height: 38px; max-height: 46px; padding: 4px 10px; }"
+            )
+            # The fit runs on first show, not here: a style sheet does not
+            # reach size hints until the widget is polished, so measuring now
+            # would size the keyboard against the old, larger metrics.
+            self._fitted = False
+
         self.password.edit.returnPressed.connect(self._attempt)
         self.username.edit.returnPressed.connect(self.password.edit.setFocus)
 
@@ -70,17 +140,41 @@ class LoginDialog(QtWidgets.QDialog):
         try:
             session = self.auth.login(self.username.text(), self.password.text())
         except AuthError as exc:
-            self.message.setText(str(exc))
+            self._say(str(exc))
             self.password.clear()
             return
         if session.must_change_password:
             new_password = ChangePasswordDialog.ask(self, self.auth, session.username)
             if not new_password:
-                self.message.setText("A password change is required before you can continue.")
+                self._say("A password change is required before you can continue.")
                 return
             session = self.auth.login(session.username, new_password)
         self.session = session
         self.accept()
+
+    def showEvent(self, event):  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if getattr(self, "pad", None) is not None and not self._fitted:
+            self._fitted = True
+            fit_with_keyboard(self, self.pad)
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt naming
+        """Point the embedded keyboard at whichever field the operator tapped."""
+        focus_in = (
+            QtCore.QEvent.Type.FocusIn if hasattr(QtCore.QEvent, "Type")
+            else QtCore.QEvent.FocusIn
+        )
+        if event.type() == focus_in and getattr(self, "pad", None) is not None:
+            self.pad.set_target(watched)
+        return super().eventFilter(watched, event)
+
+    def _set_reveal(self, shown: bool) -> None:
+        normal = (
+            QtWidgets.QLineEdit.EchoMode.Normal
+            if hasattr(QtWidgets.QLineEdit, "EchoMode")
+            else QtWidgets.QLineEdit.Normal
+        )
+        self.password.edit.setEchoMode(normal if shown else ECHO_PASSWORD)
 
     # ------------------------------------------------------------------ exit
     def _request_exit(self) -> None:
@@ -120,7 +214,7 @@ class LoginDialog(QtWidgets.QDialog):
         return None
 
 
-class ChangePasswordDialog(QtWidgets.QDialog):
+class ChangePasswordDialog(_MessageMixin, QtWidgets.QDialog):
     def __init__(self, parent, auth: AuthManager, username: str):
         super().__init__(parent)
         self.auth = auth
@@ -147,6 +241,7 @@ class ChangePasswordDialog(QtWidgets.QDialog):
         self.message = QtWidgets.QLabel("")
         self.message.setStyleSheet("color: #c5221f; font-weight: 600;")
         self.message.setWordWrap(True)
+        self.message.setVisible(False)
         layout.addWidget(self.message)
 
         buttons = QtWidgets.QHBoxLayout()
@@ -161,12 +256,12 @@ class ChangePasswordDialog(QtWidgets.QDialog):
 
     def _save(self) -> None:
         if self.first.text() != self.second.text():
-            self.message.setText("The two passwords do not match.")
+            self._say("The two passwords do not match.")
             return
         try:
             self.auth.set_password(self.username, self.first.text(), actor=self.username)
         except AuthError as exc:
-            self.message.setText(str(exc))
+            self._say(str(exc))
             return
         self.new_password = self.first.text()
         self.accept()
@@ -179,7 +274,7 @@ class ChangePasswordDialog(QtWidgets.QDialog):
         return None
 
 
-class ExitKioskDialog(QtWidgets.QDialog):
+class ExitKioskDialog(_MessageMixin, QtWidgets.QDialog):
     """Ask for administrator credentials before leaving kiosk mode."""
 
     def __init__(self, parent, auth: AuthManager):
@@ -216,6 +311,7 @@ class ExitKioskDialog(QtWidgets.QDialog):
         self.message = QtWidgets.QLabel("")
         self.message.setStyleSheet("color: #c5221f; font-weight: 600;")
         self.message.setWordWrap(True)
+        self.message.setVisible(False)
         layout.addWidget(self.message)
 
         buttons = QtWidgets.QHBoxLayout()
@@ -232,14 +328,14 @@ class ExitKioskDialog(QtWidgets.QDialog):
         try:
             session = self.auth.login(self.username.text(), self.password.text())
         except AuthError as exc:
-            self.message.setText(str(exc))
+            self._say(str(exc))
             self.password.clear()
             return
         if not session.is_admin:
             # Audited: an operator trying to reach the desktop is worth seeing.
             self.auth.db.audit(session.username, "kiosk.exit_denied",
                                detail="not an administrator")
-            self.message.setText("Only an administrator can leave kiosk mode.")
+            self._say("Only an administrator can leave kiosk mode.")
             self.password.clear()
             return
         self.auth.db.audit(session.username, "kiosk.exit")

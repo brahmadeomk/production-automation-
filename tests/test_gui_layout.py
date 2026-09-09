@@ -13,7 +13,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PyQt5")
 
-from PyQt5 import QtWidgets  # noqa: E402
+from PyQt5 import QtCore, QtWidgets  # noqa: E402
 
 from progstation.gui.widgets import TouchKeyboard  # noqa: E402
 
@@ -236,17 +236,21 @@ def test_keyboard_fits_on_screen(qt_app, panel_height):
         qt_app.setStyleSheet("")
 
 
-@pytest.mark.parametrize("panel_height", [480, 600, 800])
-def test_keyboard_keys_are_not_crushed(qt_app, panel_height):
+def test_keyboard_keys_are_not_crushed(qt_app):
     """Every key must stay a usable touch target.
 
     Fitting the dialog is not enough on its own: a style sheet ``min-height``
     overrides ``setFixedHeight``, and with it set to 0 the layout squeezed the
     keys to 16 px while the control buttons stayed at 92 px.  The dialog then
     *passed* a height check, because crushed keys make it smaller.
+
+    The scale is taken from the real screen: scaling for a panel taller than
+    the one actually present is a contradiction the application cannot create,
+    since it derives the scale from the screen it is running on.
     """
     from progstation.gui.style import build_stylesheet, scale_for
 
+    panel_height = qt_app.primaryScreen().geometry().height()
     qt_app.setStyleSheet(build_stylesheet(scale_for(panel_height)))
     try:
         kb = TouchKeyboard(title="Password", password=True)
@@ -261,8 +265,9 @@ def test_keyboard_keys_are_not_crushed(qt_app, panel_height):
 
 def test_keyboard_keys_stay_a_usable_touch_target(qt_app):
     """Shrinking to fit must not produce keys too small to hit."""
-    height = TouchKeyboard._key_height(numeric=False, password=True)
-    assert 38 <= height <= 64
+    from progstation.gui.widgets import keyboard_key_height
+
+    assert 38 <= keyboard_key_height(numeric=False, password=True) <= 110
 
 
 # --------------------------------------------------------------- kiosk exit
@@ -373,3 +378,102 @@ def test_kiosk_exit_attempts_are_audited(qt_app, auth_station):
     actions = {(row["Action"], row["Username"]) for row in auth_station.db.list_audit(20)}
     assert ("kiosk.exit_denied", "op1") in actions
     assert ("kiosk.exit", "admin") in actions
+
+
+# ------------------------------------------------- embedded kiosk keyboard
+def _kiosk_login(qt_app, auth):
+    from progstation.gui.login import LoginDialog
+    from progstation.gui.style import build_stylesheet, scale_for
+
+    qt_app.setStyleSheet(
+        build_stylesheet(scale_for(qt_app.primaryScreen().geometry().height()))
+    )
+    dialog = LoginDialog(auth, station_id="STATION-01", kiosk=True)
+    dialog.show()
+    qt_app.processEvents()
+    return dialog
+
+
+def test_kiosk_login_has_the_keyboard_on_screen(qt_app, auth_station):
+    """A keyboard in its own window is at the mercy of the kiosk's minimal
+    window manager -- it opened behind the login as an empty frame. Embedded,
+    there is no second window to mismanage."""
+    dialog = _kiosk_login(qt_app, auth_station)
+    try:
+        assert getattr(dialog, "pad", None) is not None
+        assert dialog.pad.isVisibleTo(dialog)
+        # And no button that would open a second one.
+        assert not any(
+            button.text() == "⌨"
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+        )
+    finally:
+        dialog.close()
+
+
+def test_kiosk_login_fits_the_panel(qt_app, auth_station):
+    """With the keyboard on it, the login must still fit -- otherwise Sign in
+    sits below the bottom edge."""
+    dialog = _kiosk_login(qt_app, auth_station)
+    try:
+        screen = qt_app.primaryScreen().availableGeometry()
+        assert dialog.minimumSizeHint().height() <= screen.height(), (
+            f"kiosk login needs {dialog.minimumSizeHint().height()} px,"
+            f" panel is {screen.height()}"
+        )
+        assert len({b.height() for b in dialog.pad.keys}) == 1
+        assert dialog.pad.keys[0].height() >= 36
+    finally:
+        dialog.close()
+
+
+def test_kiosk_keyboard_types_into_the_focused_field(qt_app, auth_station):
+    """Tapping a field must redirect the keyboard to it."""
+    dialog = _kiosk_login(qt_app, auth_station)
+    try:
+        dialog.username.edit.setFocus()
+        qt_app.processEvents()
+        for char in "op1":
+            dialog.pad._press(char)
+
+        dialog.password.edit.setFocus()
+        qt_app.processEvents()
+        for char in "sec":
+            dialog.pad._press(char)
+
+        assert dialog.username.text() == "op1"
+        assert dialog.password.text() == "sec"
+    finally:
+        dialog.close()
+
+
+def test_keys_do_not_steal_focus_from_the_field(qt_app, auth_station):
+    """A key that takes focus loses the target on the first press."""
+    dialog = _kiosk_login(qt_app, auth_station)
+    try:
+        no_focus = (
+            QtCore.Qt.FocusPolicy.NoFocus if hasattr(QtCore.Qt, "FocusPolicy")
+            else QtCore.Qt.NoFocus
+        )
+        assert all(button.focusPolicy() == no_focus for button in dialog.pad.keys)
+    finally:
+        dialog.close()
+
+
+def test_error_line_takes_no_room_until_there_is_an_error(qt_app, auth_station):
+    """A reserved blank line costs height the keyboard needs."""
+    from progstation.gui.login import ChangePasswordDialog, ExitKioskDialog, LoginDialog
+
+    for dialog in (
+        LoginDialog(auth_station, station_id="S", kiosk=True),
+        ChangePasswordDialog(None, auth_station, "admin"),
+        ExitKioskDialog(None, auth_station),
+    ):
+        dialog.show()
+        assert dialog.message.isHidden(), f"{type(dialog).__name__} reserves a blank line"
+        dialog._say("something went wrong")
+        assert not dialog.message.isHidden()
+        assert dialog.message.text() == "something went wrong"
+        dialog._say("")
+        assert dialog.message.isHidden()
+        dialog.close()

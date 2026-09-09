@@ -470,6 +470,13 @@ The session drives the panel at the mode `xrandr` marks native (`+`). A desktop
 autostart entry would never run here, since there is no desktop — so the
 resolution is set by `.xinitrc` instead.
 
+The login screen carries its own keyboard rather than opening one in a separate
+window: the kiosk window manager is a minimal one built for single-window
+applications, and a keyboard of its own would be at its mercy. Tapping either
+field points the keyboard at it. Where the panel is too short for every row,
+the symbols row is dropped before the keys are shrunk past a usable size —
+Shift on the digit row still reaches `!@#$%^&*()`.
+
 **Leaving requires an administrator.** The Exit button on the login screen
 prompts for administrator credentials; an operator account is refused, and both
 the refusal and the successful exit are written to the audit log
