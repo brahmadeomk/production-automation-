@@ -28,7 +28,113 @@ systemctl restart progstation
 
 ---
 
-## 2. First checks on any fault
+## 2. Getting in over SSH
+
+Kiosk mode removes the desktop and blocks the console virtual terminals
+(`DontVTSwitch`), so **SSH is the maintenance route into a station**. The
+station's own Exit button leaves the kiosk, but that needs an administrator
+standing at the panel.
+
+> **Enable and test SSH before you enable kiosk mode.** Afterwards there is no
+> desktop to enable it from and no console to switch to; recovery means taking
+> the SD card to another machine.
+
+### 2.1 Enabling SSH
+
+On the station, before it is locked down:
+
+```bash
+sudo systemctl enable --now ssh
+```
+
+Or on a card imaged elsewhere, put an empty file named `ssh` in the boot
+partition — the Pi enables the server on first boot and deletes the file.
+
+### 2.2 Which account to log in as
+
+Log in as the Pi's own administrator account — the one created when the card
+was imaged (often `pi`, but whatever your site uses). **Not `progstation`:**
+that is a system account created with `/usr/sbin/nologin` precisely so that
+nobody can log in as the account that owns the production database.
+
+```bash
+ssh pi@<station address>
+```
+
+Find the address from the panel: **Settings → Identity** shows the IPv4
+address and MAC of every interface. If the station is already unreachable,
+its MAC is on that page too — your network administrator can find its lease
+from that.
+
+### 2.3 Running station commands
+
+Once in, station commands run as the service account, so they read and write
+the database as the station itself does. Running them as your own user, or
+under plain `sudo`, can leave root-owned files that lock the station out of
+its own database:
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation status
+sudo -u progstation /opt/progstation/venv/bin/progstation identity
+sudo -u progstation /opt/progstation/venv/bin/progstation doctor
+```
+
+A shell alias saves the repetition:
+
+```bash
+alias pstation='sudo -u progstation /opt/progstation/venv/bin/progstation'
+```
+
+Service control and logs use your own account with `sudo`:
+
+```bash
+systemctl status progstation-kiosk        # kiosk mode
+systemctl status progstation              # desktop autostart
+journalctl -u progstation-kiosk -f        # follow the log
+sudo systemctl restart progstation-kiosk
+```
+
+To stop the kiosk and leave the panel blank while you work, then bring it
+back:
+
+```bash
+sudo systemctl stop progstation-kiosk
+sudo systemctl start progstation-kiosk
+```
+
+### 2.4 Hardening the maintenance account
+
+A station sits on a factory network with a database of production records, so
+treat the SSH account as the way in that it is:
+
+- **Change the imaged default password.** A Pi still on `raspberry` is open to
+  anyone on the network.
+- **Prefer keys to passwords.** Copy your key with
+  `ssh-copy-id pi@<station>`, confirm it works, then set
+  `PasswordAuthentication no` in `/etc/ssh/sshd_config` and
+  `sudo systemctl restart ssh`.
+- **Keep at least two people able to get in.** With the desktop gone and the
+  kiosk exit behind a password, a single lost credential means an SD card
+  rebuild.
+- Station logins are separate from SSH: the operator and administrator
+  accounts in section 8 are the application's own and grant no shell access.
+
+### 2.5 When SSH will not connect
+
+| Symptom | Check |
+|---|---|
+| `Connection refused` | The server is not running: SSH was never enabled before lock-down |
+| `No route to host` | Wrong address, or the station moved networks — check **Settings → Identity** on the panel |
+| `Permission denied` | Wrong account. `progstation` cannot be logged into at all; use the Pi's admin account |
+| Nothing on the network at all | Read the MAC from **Settings → Identity** and ask for its DHCP lease |
+
+If none of that gets you in, the remaining routes are the panel itself —
+**Exit** with an administrator password, which drops you to a desktop — or
+powering down and reading the SD card on another machine.
+
+---
+
+## 3. First checks on any fault
 
 ```bash
 sudo -u progstation /opt/progstation/venv/bin/progstation status
@@ -41,13 +147,13 @@ backup. `selftest --outputs` additionally blinks the LEDs and sounds the buzzer.
 > **If `status` reports `gpio_backend: simulated` on a real station, it is not
 > programming anything.** A station with GPIO now refuses to start rather than
 > simulating, so seeing this means it was started with `--simulate` or has
-> `gpio.backend: simulated` in its configuration — see section 4.
+> `gpio.backend: simulated` in its configuration — see section 5.
 
 ---
 
-## 3. Programming faults
+## 4. Programming faults
 
-### 3.1 Every board reports `E_NO_DEVICE`
+### 4.1 Every board reports `E_NO_DEVICE`
 
 The signature read came back all-zeros or all-ones, meaning the ISP bus is
 floating. In likelihood order:
@@ -96,7 +202,7 @@ avrdude -p atmega328p -c linuxspi \
 > full string from `gpio.reset` and `gpio.chip`, so you only set the pin once.
 > Check what it actually runs with `progstation --verbose program ...`.
 
-### 3.2 `E_FIRMWARE_MISSING` — "cannot be read" / "not readable by this account"
+### 4.2 `E_FIRMWARE_MISSING` — "cannot be read" / "not readable by this account"
 
 The station runs as `progstation`, which cannot read another user's home
 directory. A `.hex` on the desktop (`/home/pi/Desktop/...`) will never program.
@@ -120,13 +226,13 @@ sudo -u progstation head -c 64 /var/lib/progstation/firmware/product.hex
 Storing firmware under the station also keeps it inside the scheduled backup,
 so the exact binary shipped with each serial number stays recoverable.
 
-### 3.3 `E_SIGNATURE_MISMATCH`
+### 4.3 `E_SIGNATURE_MISMATCH`
 
 The station read a valid signature that is not the one the project expects.
 Almost always the wrong product selected or the wrong board loaded. The error
 detail names both the expected and the found signature.
 
-### 3.4 Intermittent `E_FLASH_VERIFY` or `E_EEPROM_VERIFY`
+### 4.4 Intermittent `E_FLASH_VERIFY` or `E_EEPROM_VERIFY`
 
 Programming started, so the bus works — this is a marginal connection.
 
@@ -135,7 +241,7 @@ Programming started, so the bus works — this is a marginal connection.
 - Lower `avrdude.baudrate`.
 - Check the target's decoupling if a whole batch behaves this way.
 
-### 3.5 A board bricked after a fuse change
+### 4.5 A board bricked after a fuse change
 
 Setting the clock-source fuse to an external crystal the board does not have
 disables ISP. Prevent this by proving fuse settings on a sacrificial board
@@ -149,7 +255,7 @@ programmer.
 
 ---
 
-## 4. GPIO backend problems
+## 5. GPIO backend problems
 
 The station probes `lgpio`, then `gpiozero`. Each candidate is **proved** by
 claiming and releasing a pin, not merely imported — `gpiozero` imports cleanly
@@ -166,7 +272,7 @@ That second row is deliberate. A station running simulated would show PASS
 while programming nothing, and stamp serial numbers onto boards that never
 received firmware. Refusing to start is the safer failure.
 
-### 4.1 `GpioUnavailableError` at startup
+### 5.1 `GpioUnavailableError` at startup
 
 The message lists what each backend reported. The usual causes:
 
@@ -205,7 +311,7 @@ sudo /opt/progstation/venv/bin/pip install lgpio
 sudo fuser -v /dev/gpiochip0
 ```
 
-### 4.2 Checking which backend is live
+### 5.2 Checking which backend is live
 
 `status` does **not** open the panel — only `program`, `gui` and `selftest` do.
 It is safe to run during production and reports which backend *would* be used:
@@ -240,7 +346,7 @@ To run without hardware on purpose (training, bench work), pass `--simulate`,
 which simulates the programmer *and* the panel, or set `gpio.backend: simulated`
 in `station.yaml`.
 
-## 5. Serial numbers
+## 6. Serial numbers
 
 Read and set the counter:
 
@@ -268,9 +374,9 @@ progstation history --result PASS --limit 5
 
 ---
 
-## 6. Database
+## 7. Database
 
-### 6.1 Backup
+### 7.1 Backup
 
 ```bash
 progstation backup run          # immediate
@@ -287,7 +393,7 @@ Backup failures are logged to `BackupLog` and shown in the status bar. **They
 never stop production** — a station that cannot reach the file server keeps
 programming and recording locally.
 
-### 6.2 Enabling backup
+### 7.2 Enabling backup
 
 The share must be mounted **outside** the station: the backup timer runs as the
 `progstation` account, not root, so a backup job can never leave root-owned
@@ -340,7 +446,7 @@ SQLite sidecar files that lock the station out of its own database.
 Run it as `progstation`, not with `sudo` — that is exactly how the timer runs it,
 so a success proves the scheduled job will work too.
 
-### 6.3 Backup share will not mount
+### 7.3 Backup share will not mount
 
 ```bash
 sudo mount -t cifs //fileserver/production /mnt/progstation-backup \
@@ -353,7 +459,7 @@ sudo mount -t cifs //fileserver/production /mnt/progstation-backup \
   in `backup.mount_options`.
 - Mounted by `/etc/fstab` instead? Set `backup.manage_mount: false`.
 
-### 6.4 Restore
+### 7.4 Restore
 
 ```bash
 sudo systemctl stop progstation
@@ -368,7 +474,7 @@ sudo systemctl start progstation
 Keep the `.bad` copy: records created after the backup live only there, and can
 be recovered by an engineer with SQLite.
 
-### 6.5 Integrity check
+### 7.5 Integrity check
 
 ```bash
 sudo -u progstation sqlite3 /var/lib/progstation/progstation.db "PRAGMA integrity_check;"
@@ -379,7 +485,7 @@ database that fails this check — traceability is no longer trustworthy.
 
 ---
 
-## 7. Users
+## 8. Users
 
 ```bash
 progstation user list
@@ -402,7 +508,7 @@ stored as salted PBKDF2-SHA256 hashes.
 
 ---
 
-## 8. Upgrading
+## 9. Upgrading
 
 ```bash
 cd /path/to/checkout && git pull
@@ -422,9 +528,9 @@ progstation backup run
 
 ---
 
-## 9. Display and touchscreen
+## 10. Display and touchscreen
 
-### 9.1 Choosing the Qt platform
+### 10.1 Choosing the Qt platform
 
 `/etc/progstation/display.env` decides how the station reaches the screen. The
 installer picks a default by looking for a desktop session; change it if the
@@ -446,7 +552,7 @@ sudo systemctl restart progstation
 journalctl -u progstation -n 40 --no-pager
 ```
 
-### 9.2 Dedicated kiosk mode
+### 10.2 Dedicated kiosk mode
 
 For a station that must boot straight into the application with nothing an
 operator can reach behind it:
@@ -503,17 +609,18 @@ did nothing. Off the kiosk — a maintainer running `progstation gui` on the
 desktop — the prompt keeps the ordinary keyboard button instead, since a full
 window manager places a second window correctly.
 
-For maintenance, use SSH. To restore the normal desktop:
+For maintenance, use SSH — see section 2. To restore the normal desktop:
 
 ```bash
 sudo /opt/progstation/deploy/kiosk-setup.sh --revert
 sudo reboot
 ```
 
-> Set an administrator password you can retrieve before enabling this. With the
-> desktop gone and the exit behind a password, SSH is the remaining way in.
+> Set an administrator password you can retrieve before enabling this, and
+> confirm SSH works first (section 2). With the desktop gone and the exit
+> behind a password, SSH is the remaining way in.
 
-### 9.3 Autostarting inside the desktop
+### 10.3 Autostarting inside the desktop
 
 On a Pi that boots to the desktop, running the station as a desktop
 application is simpler than driving X from a system service:
@@ -527,7 +634,7 @@ sudo systemctl disable --now progstation # avoid two copies fighting for the scr
 
 Log out and back in. Use either this **or** the systemd service, never both.
 
-### 9.4 Interface size
+### 10.4 Interface size
 
 The interface is written for the smallest supported panel (800x480) and scales
 up with the screen, to a limit of 1.6x.
@@ -627,7 +734,7 @@ display 1024x600, UI scale 1.25
 If that disagrees with `xdpyinfo`, the station attached to a different display
 — check `DISPLAY` in `/etc/progstation/display.env`.
 
-### 9.5 Common symptoms
+### 10.5 Common symptoms
 
 
 
@@ -651,7 +758,7 @@ QT_QPA_PLATFORM=offscreen progstation --simulate gui --windowed
 
 ---
 
-## 10. Preventive maintenance
+## 11. Preventive maintenance
 
 | Interval | Task |
 |---|---|
