@@ -177,7 +177,37 @@ Shows station health and offers three buttons:
 - **Run self-test** — the acceptance checks from section 19 of the SRS
 - **Test LEDs and buzzer** — exercises the panel and reports the fixture switch
 
-### 5.5 Audit log
+### 5.5 Identity
+
+Which physical station this is, and how it is on the network. Administrator
+only, since it carries the station's network details.
+
+| Field | What it is |
+|---|---|
+| Device ID | The station id from `station.yaml`, the one stamped on every production record |
+| Connected to (SSID) | The Wi-Fi network in use, or why there is none |
+| MAC address | The connected interface's MAC — what a network administrator will ask for |
+| Hostname | The name the station answers to on the network |
+| Board | The Pi model, read from the device tree |
+| Board serial | The Pi's own serial, unique to the board and independent of any configuration |
+
+Below that, every interface is listed with its MAC, IPv4 address, link state
+and SSID, so a station with both a cable and Wi-Fi shows both. **Refresh**
+re-reads everything — use it after plugging a cable in or changing networks.
+
+The same information is available over SSH, which is often easier when the
+station will not come up on the network:
+
+```bash
+progstation identity
+progstation --json identity     # for a script or a ticket
+```
+
+Fields that need a tool the image does not carry read `unavailable` rather
+than failing — the MAC and device id always come from the kernel and are
+always shown.
+
+### 5.6 Audit log
 
 Every login, project change, user change and serial-counter override, with who
 and when. Read-only by design.
@@ -309,3 +339,4 @@ recoverable with this station.
 | Password rejected but looks right | The keyboard types lower case unless Shift or Caps is on — tick **Show characters** |
 | Window does not fill the screen | The station was started without `--kiosk`; the service uses it automatically |
 | Status bar shows a backup failure | Network or share problem; production is unaffected |
+| Need this station's MAC or Wi-Fi network | **Settings → Identity**, or `progstation identity` over SSH |

@@ -66,6 +66,43 @@ def cmd_status(app: StationApp, args) -> int:
     return EXIT_OK
 
 
+def cmd_identity(app: StationApp, args) -> int:
+    """Which station this is and how it is on the network (SRS section 4)."""
+    from .hw.identity import gather
+
+    identity = gather(app.config.station_id)
+    if args.json:
+        _emit(
+            {
+                "station_id": identity.station_id,
+                "hostname": identity.hostname,
+                "model": identity.model,
+                "board_serial": identity.board_serial,
+                "ssid": identity.ssid,
+                "primary_mac": identity.primary_mac,
+                "interfaces": [vars(i) for i in identity.interfaces],
+            },
+            True,
+        )
+        return EXIT_OK
+
+    print(f"{APP_NAME} {__version__}")
+    for caption, value in (
+        ("device id", identity.station_id),
+        ("connected to", identity.ssid),
+        ("mac address", identity.primary_mac),
+        ("hostname", identity.hostname),
+        ("board", identity.model),
+        ("board serial", identity.board_serial),
+    ):
+        print(f"  {caption:<14}: {value}")
+    if identity.interfaces:
+        print("  interfaces    :")
+        for interface in identity.interfaces:
+            print(f"      {interface.describe()}  {interface.ipv4}")
+    return EXIT_OK
+
+
 def cmd_init(app: StationApp, args) -> int:
     password = app.bootstrap_admin()
     if password:
@@ -614,6 +651,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="show station health").set_defaults(func=cmd_status)
+    sub.add_parser(
+        "identity", help="show the device id, MAC and connected SSID"
+    ).set_defaults(func=cmd_identity)
 
     init = sub.add_parser("init", help="prepare a fresh station")
     init.add_argument("--write-config", help="write a configuration template here")

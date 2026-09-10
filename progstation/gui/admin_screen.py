@@ -43,6 +43,7 @@ class AdminScreen(QtWidgets.QWidget):
         # The System tab carries a long health list; on a 480 px panel it must
         # scroll rather than force the whole window taller than the screen.
         tabs.addTab(_scrollable(self._system_tab()), "System")
+        tabs.addTab(_scrollable(self._identity_tab()), "Identity")
         tabs.addTab(self._audit_tab(), "Audit log")
         layout.addWidget(tabs)
 
@@ -218,6 +219,73 @@ class AdminScreen(QtWidgets.QWidget):
         self.refresh()
 
     # --------------------------------------------------------------- system
+    # ------------------------------------------------------------- identity
+    def _identity_tab(self) -> QtWidgets.QWidget:
+        """Which physical station this is, and how it is on the network.
+
+        An engineer holding a production log needs to tie it back to a box on
+        a bench, so the station id sits next to the board serial and the MAC.
+        """
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+
+        summary = Card()
+        form = QtWidgets.QFormLayout(summary)
+        self.identity_labels: Dict[str, QtWidgets.QLabel] = {}
+        for key, caption in (
+            ("station_id", "Device ID"),
+            ("ssid", "Connected to (SSID)"),
+            ("primary_mac", "MAC address"),
+            ("hostname", "Hostname"),
+            ("model", "Board"),
+            ("board_serial", "Board serial"),
+        ):
+            label = QtWidgets.QLabel("")
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(
+                QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+                if hasattr(QtCore.Qt, "TextInteractionFlag")
+                else QtCore.Qt.TextSelectableByMouse
+            )
+            self.identity_labels[key] = label
+            form.addRow(caption, label)
+        layout.addWidget(summary)
+
+        self.interface_table = RecordTable(
+            (("name", "Interface"), ("kind", "Type"), ("mac", "MAC"),
+             ("ipv4", "IPv4"), ("state", "State"), ("ssid", "SSID"))
+        )
+        layout.addWidget(self.interface_table, 1)
+
+        buttons = QtWidgets.QHBoxLayout()
+        refresh = QtWidgets.QPushButton("Refresh")
+        refresh.setObjectName("Primary")
+        refresh.clicked.connect(self.refresh_identity)
+        buttons.addWidget(refresh)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        return page
+
+    def refresh_identity(self) -> None:
+        from ..hw.identity import gather
+
+        identity = gather(self.app.config.station_id)
+        for key, label in self.identity_labels.items():
+            label.setText(str(getattr(identity, key, "")))
+        self.interface_table.load([
+            {
+                "name": interface.name,
+                "kind": "Wi-Fi" if interface.wireless else "wired",
+                "mac": interface.mac,
+                "ipv4": interface.ipv4,
+                "state": interface.state,
+                # Blank rather than "unavailable" on a wired row, where the
+                # column simply does not apply.
+                "ssid": interface.ssid if interface.wireless else "",
+            }
+            for interface in identity.interfaces
+        ])
+
     def _system_tab(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(page)
@@ -339,6 +407,8 @@ class AdminScreen(QtWidgets.QWidget):
                 for r in self.app.db.list_audit(300)
             ]
         )
+
+        self.refresh_identity()
 
 
 def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
