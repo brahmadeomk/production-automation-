@@ -207,7 +207,36 @@ Fields that need a tool the image does not carry read `unavailable` rather
 than failing — the MAC and device id always come from the kernel and are
 always shown.
 
-### 5.6 Audit log
+### 5.6 Wi-Fi
+
+Lists the networks in range with their signal strength and security. Select
+one and press **Connect**; a secured network asks for its password, with
+**Show characters** if you need to check what you typed. On the kiosk the
+keyboard is on the dialog itself.
+
+The station's backups and any network share go over this link, so:
+
+- An **open** network is called out before you join it. Anything the station
+  sends over one can be read by others in range.
+- Changing networks can break the backup share. Check the backup status in
+  the status bar afterwards.
+- The network you join is written to the audit log, with who joined it. **The
+  password is not** — it is never logged, never stored by the station, and
+  never appears in the process list while connecting.
+
+If the page says NetworkManager is not installed, this station cannot be moved
+to another network from the panel; do it over SSH. If a connection attempt
+says the station is *not permitted* to change networks, the permission rule
+was not installed — see section 2 of the maintenance guide.
+
+The same is available over SSH:
+
+```bash
+progstation wifi list
+progstation wifi connect --ssid PlantFloor-2G   # prompts for the password
+```
+
+### 5.7 Audit log
 
 Every login, project change, user change and serial-counter override, with who
 and when. Read-only by design.
@@ -340,3 +369,4 @@ recoverable with this station.
 | Window does not fill the screen | The station was started without `--kiosk`; the service uses it automatically |
 | Status bar shows a backup failure | Network or share problem; production is unaffected |
 | Need this station's MAC or Wi-Fi network | **Settings → Identity**, or `progstation identity` over SSH |
+| Station must move to a different Wi-Fi network | **Settings → Wi-Fi**, or `progstation wifi` over SSH |

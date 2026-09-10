@@ -119,7 +119,34 @@ treat the SSH account as the way in that it is:
 - Station logins are separate from SSH: the operator and administrator
   accounts in section 8 are the application's own and grant no shell access.
 
-### 2.5 When SSH will not connect
+### 2.5 Wi-Fi from the panel
+
+The Settings page can join a Wi-Fi network, which needs one permission the
+station does not otherwise have. `install.sh` puts a polkit rule in
+`/etc/polkit-1/rules.d/50-progstation-wifi.rules` granting the service account
+exactly two things: bring a wireless interface up or down, and save a
+network's credentials. It cannot change the hostname, the wired connection the
+station backs up over, or anything else.
+
+Without that rule the page scans but every attempt to connect fails with
+*"the station is not permitted to change networks"*.
+
+**To forbid Wi-Fi changes from the panel** — a site where IT fixes the network
+and an operator must not move it:
+
+```bash
+sudo rm /etc/polkit-1/rules.d/50-progstation-wifi.rules
+```
+
+The page then says why it cannot connect rather than failing silently.
+Configure the network over SSH instead:
+
+```bash
+sudo nmcli device wifi list
+sudo nmcli --ask device wifi connect <ssid>
+```
+
+### 2.6 When SSH will not connect
 
 | Symptom | Check |
 |---|---|

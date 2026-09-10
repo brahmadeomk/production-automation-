@@ -128,6 +128,20 @@ install -m 0755 "$SOURCE_DIR/deploy/kiosk-setup.sh" "$PREFIX/deploy/" 2>/dev/nul
 install -m 0644 "$SOURCE_DIR/deploy/progstation.service"        /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.service" /etc/systemd/system/
 install -m 0644 "$SOURCE_DIR/deploy/progstation-backup.timer"   /etc/systemd/system/
+
+# Let the Settings page join a Wi-Fi network. The station has no login session,
+# so polkit's "active local session" check can never pass for it; without this
+# the page can scan but not connect. The grant is narrow -- see the rule.
+if [[ -d /etc/polkit-1/rules.d ]]; then
+    install -m 0644 "$SOURCE_DIR/deploy/50-progstation-wifi.rules" \
+        /etc/polkit-1/rules.d/50-progstation-wifi.rules
+    log "Wi-Fi configuration from the panel is enabled"
+    log "    remove /etc/polkit-1/rules.d/50-progstation-wifi.rules to forbid it"
+else
+    warn "polkit rules directory not found; the panel will not be able to"
+    warn "change networks (scanning still works). Configure Wi-Fi over SSH."
+fi
+
 systemctl daemon-reload
 systemctl enable progstation.service
 log "Backup timer left disabled; enable it once the share is configured:"

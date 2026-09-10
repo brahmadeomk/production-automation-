@@ -103,6 +103,44 @@ def cmd_identity(app: StationApp, args) -> int:
     return EXIT_OK
 
 
+def cmd_wifi(app: StationApp, args) -> int:
+    """Scan for and join a Wi-Fi network."""
+    import getpass
+
+    from .hw import wifi
+
+    if not wifi.available():
+        print("NetworkManager (nmcli) is not installed on this station.")
+        return EXIT_FAIL
+
+    if args.wifi_action == "list":
+        networks = wifi.scan()
+        if args.json:
+            _emit([vars(n) for n in networks], True)
+            return EXIT_OK
+        if not networks:
+            print("No networks found.")
+            return EXIT_OK
+        for network in networks:
+            marker = "*" if network.in_use else " "
+            print(f" {marker} {network.ssid:<32} {network.signal:>3}%  "
+                  f"{network.security or 'open'}")
+        return EXIT_OK
+
+    ssid = args.ssid
+    if not ssid:
+        print("Give the network with --ssid.")
+        return EXIT_FAIL
+    # Prompted, never taken from the command line: arguments are readable by
+    # any user on the box while the command runs, and end up in shell history.
+    password = getpass.getpass(f"Password for '{ssid}' (blank if open): ")
+    result = wifi.connect(ssid, password)
+    print(result.detail)
+    if result.ok:
+        app.db.audit(args.actor or "cli", "network.wifi_connect", ssid, "")
+    return EXIT_OK if result.ok else EXIT_FAIL
+
+
 def cmd_init(app: StationApp, args) -> int:
     password = app.bootstrap_admin()
     if password:
@@ -654,6 +692,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "identity", help="show the device id, MAC and connected SSID"
     ).set_defaults(func=cmd_identity)
+
+    wifi_parser = sub.add_parser("wifi", help="scan for and join a Wi-Fi network")
+    wifi_parser.add_argument(
+        "wifi_action", choices=["list", "connect"], nargs="?", default="list"
+    )
+    wifi_parser.add_argument("--ssid", help="network to join")
+    wifi_parser.set_defaults(func=cmd_wifi)
 
     init = sub.add_parser("init", help="prepare a fresh station")
     init.add_argument("--write-config", help="write a configuration template here")

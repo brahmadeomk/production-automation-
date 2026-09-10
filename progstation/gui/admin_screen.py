@@ -31,6 +31,7 @@ class AdminScreen(QtWidgets.QWidget):
         session.require_admin()
         self._projects: List[Any] = []
         self._users: List[Any] = []
+        self._networks: List[Any] = []
         self._build()
         self.refresh()
 
@@ -44,6 +45,7 @@ class AdminScreen(QtWidgets.QWidget):
         # scroll rather than force the whole window taller than the screen.
         tabs.addTab(_scrollable(self._system_tab()), "System")
         tabs.addTab(_scrollable(self._identity_tab()), "Identity")
+        tabs.addTab(self._wifi_tab(), "Wi-Fi")
         tabs.addTab(self._audit_tab(), "Audit log")
         layout.addWidget(tabs)
 
@@ -255,7 +257,11 @@ class AdminScreen(QtWidgets.QWidget):
             (("name", "Interface"), ("kind", "Type"), ("mac", "MAC"),
              ("ipv4", "IPv4"), ("state", "State"), ("ssid", "SSID"))
         )
-        layout.addWidget(self.interface_table, 1)
+        # A station has two or three interfaces, so this is sized to its rows.
+        # Left to stretch it eats the height the network list needs, and on a
+        # 600 px panel the Wi-Fi section falls below the fold.
+        self.interface_table.setMaximumHeight(150)
+        layout.addWidget(self.interface_table, 0)
 
         buttons = QtWidgets.QHBoxLayout()
         refresh = QtWidgets.QPushButton("Refresh")
@@ -264,7 +270,95 @@ class AdminScreen(QtWidgets.QWidget):
         buttons.addWidget(refresh)
         buttons.addStretch(1)
         layout.addLayout(buttons)
+        layout.addStretch(1)
         return page
+
+    # ------------------------------------------------------------------ wi-fi
+    def _wifi_tab(self) -> QtWidgets.QWidget:
+        """Its own page: the identity card and two tables do not fit 600 px."""
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+
+        self.wifi_table = RecordTable(
+            (("in_use", ""), ("ssid", "Network"), ("bars", "Signal"),
+             ("security", "Security"))
+        )
+        self.wifi_table.doubleClicked.connect(self._join_wifi)
+        layout.addWidget(self.wifi_table, 1)
+
+        self.wifi_message = QtWidgets.QLabel(
+            "Press Scan to list the networks in range."
+        )
+        self.wifi_message.setObjectName("Subtle")
+        self.wifi_message.setWordWrap(True)
+        layout.addWidget(self.wifi_message)
+
+        buttons = QtWidgets.QHBoxLayout()
+        self.wifi_scan_button = QtWidgets.QPushButton("Scan for networks")
+        self.wifi_scan_button.clicked.connect(self.scan_wifi)
+        buttons.addWidget(self.wifi_scan_button)
+        self.wifi_join_button = QtWidgets.QPushButton("Connect")
+        self.wifi_join_button.setObjectName("Primary")
+        self.wifi_join_button.setEnabled(False)
+        self.wifi_join_button.clicked.connect(self._join_wifi)
+        buttons.addWidget(self.wifi_join_button, 2)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        return page
+
+    # ------------------------------------------------------------------ wi-fi
+    def scan_wifi(self) -> None:
+        from ..hw import wifi
+
+        if not wifi.available():
+            self._networks = []
+            self.wifi_table.load([])
+            self.wifi_message.setText(
+                "NetworkManager (nmcli) is not installed, so this station "
+                "cannot be moved to another network from the panel."
+            )
+            self.wifi_join_button.setEnabled(False)
+            return
+
+        self.wifi_message.setText("Scanning...")
+        self.wifi_scan_button.setEnabled(False)
+        QtWidgets.QApplication.processEvents()
+        try:
+            self._networks = wifi.scan()
+        finally:
+            self.wifi_scan_button.setEnabled(True)
+
+        self.wifi_table.load([
+            {
+                "in_use": "✓" if network.in_use else "",
+                "ssid": network.ssid,
+                "bars": network.bars,
+                "security": network.security or "open",
+            }
+            for network in self._networks
+        ])
+        self.wifi_join_button.setEnabled(bool(self._networks))
+        self.wifi_message.setText(
+            f"{len(self._networks)} network(s) in range. Select one and press "
+            f"Connect." if self._networks else
+            "No networks found. The station may have no wireless interface."
+        )
+
+    def _selected_network(self):
+        index = self.wifi_table.currentRow()
+        if 0 <= index < len(getattr(self, "_networks", [])):
+            return self._networks[index]
+        notify(self, "No selection", "Select a network first.")
+        return None
+
+    def _join_wifi(self) -> None:
+        network = self._selected_network()
+        if network is None:
+            return
+        if not WifiPasswordDialog.join(self, self.app, network, self.session.username):
+            return
+        self.scan_wifi()
+        self.refresh_identity()
 
     def refresh_identity(self) -> None:
         from ..hw.identity import gather
@@ -409,6 +503,143 @@ class AdminScreen(QtWidgets.QWidget):
         )
 
         self.refresh_identity()
+
+
+def _heading(text: str) -> QtWidgets.QLabel:
+    label = QtWidgets.QLabel(text)
+    label.setObjectName("Title")
+    return label
+
+
+class WifiPasswordDialog(QtWidgets.QDialog):
+    """Ask for a network password and join, without blocking the panel.
+
+    Joining takes several seconds and NetworkManager can sit on the request
+    far longer, so the attempt runs on a worker thread; a frozen touchscreen
+    reads as a crashed station.
+    """
+
+    def __init__(self, parent, app, network, actor: str):
+        super().__init__(parent)
+        self.app = app
+        self.network = network
+        self.actor = actor
+        self.joined = False
+        self._worker = None
+        self.setWindowTitle("Connect to Wi-Fi")
+        self.setModal(True)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(8)
+        header = QtWidgets.QLabel(f"Connect to '{network.ssid}'")
+        header.setObjectName("Title")
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        if network.open:
+            note = QtWidgets.QLabel(
+                "This network is unsecured. Anything the station sends over it, "
+                "including its backups, can be read by others in range."
+            )
+            note.setObjectName("Subtle")
+            note.setWordWrap(True)
+            layout.addWidget(note)
+
+        self.password = TouchLineEdit(placeholder="Network password", password=True)
+        if not network.open:
+            layout.addWidget(self.password)
+            self.reveal = QtWidgets.QCheckBox("Show characters")
+            self.reveal.toggled.connect(self._set_reveal)
+            layout.addWidget(self.reveal)
+        else:
+            self.password.setVisible(False)
+
+        self.message = QtWidgets.QLabel("")
+        self.message.setWordWrap(True)
+        self.message.setVisible(False)
+        layout.addWidget(self.message)
+
+        buttons = QtWidgets.QHBoxLayout()
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.cancel_button)
+        self.connect_button = QtWidgets.QPushButton("Connect")
+        self.connect_button.setObjectName("Primary")
+        self.connect_button.clicked.connect(self._attempt)
+        buttons.addWidget(self.connect_button, 2)
+        layout.addLayout(buttons)
+
+        dock_keyboard(self)
+
+    def _set_reveal(self, shown: bool) -> None:
+        from .qt import ECHO_PASSWORD
+
+        normal = (QtWidgets.QLineEdit.EchoMode.Normal
+                  if hasattr(QtWidgets.QLineEdit, "EchoMode")
+                  else QtWidgets.QLineEdit.Normal)
+        self.password.edit.setEchoMode(normal if shown else ECHO_PASSWORD)
+
+    def _say(self, text: str) -> None:
+        self.message.setText(text)
+        self.message.setVisible(bool(text))
+
+    def _busy(self, busy: bool) -> None:
+        self.connect_button.setEnabled(not busy)
+        self.cancel_button.setEnabled(not busy)
+        self.password.setEnabled(not busy)
+
+    def _attempt(self) -> None:
+        if not self.network.open and not self.password.text():
+            self._say("Enter the network password.")
+            return
+        self._busy(True)
+        self._say(f"Connecting to {self.network.ssid}...")
+        QtWidgets.QApplication.processEvents()
+
+        self._worker = _WifiWorker(self.network.ssid, self.password.text())
+        self._worker.done.connect(self._finished)
+        self._worker.start()
+
+    def _finished(self, ok: bool, detail: str) -> None:
+        self._busy(False)
+        if ok:
+            self.joined = True
+            # The network the station is on is worth an audit entry; the
+            # password it was given is not, and is never recorded anywhere.
+            self.app.db.audit(
+                self.actor, "network.wifi_connect", self.network.ssid, ""
+            )
+            self.accept()
+            return
+        self.app.db.audit(
+            self.actor, "network.wifi_failed", self.network.ssid, detail
+        )
+        self._say(detail)
+
+    @classmethod
+    def join(cls, parent, app, network, actor: str) -> bool:
+        dialog = cls(parent, app, network, actor)
+        exec_dialog(dialog)
+        return dialog.joined
+
+
+class _WifiWorker(QtCore.QThread):
+    """Runs the join off the UI thread so the panel keeps repainting."""
+
+    done = QtCore.pyqtSignal(bool, str)
+
+    def __init__(self, ssid: str, password: str):
+        super().__init__()
+        self._ssid = ssid
+        self._password = password
+
+    def run(self) -> None:  # pragma: no cover - exercised through the dialog
+        from ..hw import wifi
+
+        result = wifi.connect(self._ssid, self._password)
+        # Drop the password as soon as it has been handed over.
+        self._password = ""
+        self.done.emit(result.ok, result.detail)
 
 
 def _scrollable(widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:

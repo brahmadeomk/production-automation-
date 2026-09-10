@@ -46,6 +46,7 @@ def test_the_sweep_actually_finds_the_dialogs():
         "progstation.gui.login.ExitKioskDialog",
         "progstation.gui.admin_screen.UserDialog",
         "progstation.gui.admin_screen.ProjectDialog",
+        "progstation.gui.admin_screen.WifiPasswordDialog",
     }
     missing = expected - names
     assert not missing, f"the sweep stopped seeing {sorted(missing)}"
@@ -64,6 +65,10 @@ def _build(cls, auth, app_stub):
         return cls(None, app_stub, "admin")
     if name == "ProjectDialog":
         return cls(None, app_stub, None, "admin")
+    if name == "WifiPasswordDialog":
+        from progstation.hw.wifi import Network
+
+        return cls(None, app_stub, Network("PlantFloor-2G", 72, "WPA2"), "admin")
     pytest.fail(
         f"{name} is a new dialog with no kiosk construction recipe here. Add "
         f"one, and make sure it is typable on the panel."

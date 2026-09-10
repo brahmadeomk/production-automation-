@@ -1,0 +1,28 @@
+// Let the station join a Wi-Fi network from its own Settings page.
+//
+// The station runs as a system account with no login shell and no desktop
+// session, so polkit's usual "is this an active local session?" check can
+// never pass for it.  Without this rule the Wi-Fi page can scan but every
+// attempt to connect fails with "Not authorized to control networking".
+//
+// The grant is deliberately narrow: bring an interface up or down and save a
+// network's credentials.  It does not allow changing the system's general
+// settings, the hostname, or the wired connection the station backs up over.
+//
+// Remove this file on a site where the network is fixed by IT and the panel
+// must not be able to change it; the page then shows the reason it cannot.
+//
+// Installed to /etc/polkit-1/rules.d/50-progstation-wifi.rules
+
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "progstation") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (action.id === "org.freedesktop.NetworkManager.network-control" ||
+        action.id === "org.freedesktop.NetworkManager.wifi.scan" ||
+        action.id === "org.freedesktop.NetworkManager.settings.modify.own" ||
+        action.id === "org.freedesktop.NetworkManager.settings.modify.system") {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});
