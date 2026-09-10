@@ -370,7 +370,12 @@ def fit_with_keyboard(widget, pad: "KeyboardPad", *, floor: int = 38,
             if node is widget:
                 break
             node = node.parentWidget()
-        QtWidgets.QApplication.processEvents()
+        # Deliberately no processEvents() here. This runs inside showEvent, and
+        # pumping the event loop mid-show delivers deferred deletions and paint
+        # events to widgets that are half-constructed; with enough dialogs
+        # alive it aborts the process outright. activate() above already
+        # recomputes the geometry synchronously, which is all the measurement
+        # needs.
         widget.adjustSize()
         return widget.minimumSizeHint().height()
 
