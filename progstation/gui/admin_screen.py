@@ -15,6 +15,7 @@ from ..core.eeprom import EepromMap, legacy_map, map_for_project, recommended_ma
 from ..db.database import rows_to_dicts
 from ..errors import StationError
 from ..security.auth import ROLES
+from ..timeutil import local as local_time
 from .qt import QtCore, QtWidgets, exec_dialog
 from .widgets import (
     Card, RecordTable, TouchLineEdit, confirm, dock_keyboard, notify,
@@ -486,7 +487,7 @@ class AdminScreen(QtWidgets.QWidget):
         self.user_table.load(
             [
                 {**dict(u), "Active": "yes" if u["Active"] else "no",
-                 "LastLoginAt": (u["LastLoginAt"] or "")[:19].replace("T", " ")}
+                 "LastLoginAt": local_time(u["LastLoginAt"])}
                 for u in self._users
             ]
         )
@@ -497,7 +498,7 @@ class AdminScreen(QtWidgets.QWidget):
 
         self.audit_table.load(
             [
-                {**dict(r), "Timestamp": r["Timestamp"][:19].replace("T", " ")}
+                {**dict(r), "Timestamp": local_time(r["Timestamp"])}
                 for r in self.app.db.list_audit(300)
             ]
         )

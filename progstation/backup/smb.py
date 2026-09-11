@@ -23,6 +23,7 @@ from typing import Callable, List, Optional
 from ..config import BackupConfig
 from ..db.database import Database
 from ..errors import BackupError
+from ..timeutil import local as local_time
 
 log = logging.getLogger(__name__)
 
@@ -253,4 +254,4 @@ class BackupManager:
         last = self.db.last_backup()
         if not last:
             return "Backup: never run"
-        return f"Backup: {last['Result']} at {last['Timestamp'][:19].replace('T', ' ')}"
+        return f"Backup: {last['Result']} at {local_time(last['Timestamp'])}"

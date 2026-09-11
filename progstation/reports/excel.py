@@ -19,6 +19,8 @@ except ImportError:  # pragma: no cover - exercised on stations without export
     OPENPYXL_AVAILABLE = False
 
 
+from ..timeutil import local_with_offset, zone_name
+
 LOG_COLUMNS = (
     ("Timestamp", "Timestamp"),
     ("SerialNo", "Serial No"),
@@ -73,6 +75,9 @@ def _write_rows(ws, rows: Sequence[Any]) -> None:
     fail_fill = PatternFill("solid", fgColor=_FAIL_FILL)
     for row in rows:
         record = dict(row)
+        # Local time with the offset: the file leaves the station and is read
+        # by people who cannot ask which zone it was written in.
+        record["Timestamp"] = local_with_offset(record.get("Timestamp"))
         ws.append([record.get(key, "") for key, _ in LOG_COLUMNS])
         fill = pass_fill if record.get("Result") == "PASS" else fail_fill
         ws.cell(row=ws.max_row, column=3).fill = fill
@@ -104,6 +109,8 @@ def export_records(
     meta.append(["Field", "Value"])
     meta.append(["Title", title])
     meta.append(["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+    # Named, so the times above cannot be misread in another office.
+    meta.append(["Timezone", zone_name()])
     meta.append(["Records", len(rows)])
     for key, value in (filters or {}).items():
         if value not in (None, ""):

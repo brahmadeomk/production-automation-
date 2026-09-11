@@ -10,6 +10,7 @@ from ..db.database import rows_to_dicts
 from ..reports.excel import OPENPYXL_AVAILABLE, default_filename, export_records
 from .qt import QtCore, QtWidgets
 from .widgets import Card, RecordTable, TouchLineEdit, notify
+from ..timeutil import local as local_time
 
 COLUMNS = (
     ("Timestamp", "Time"),
@@ -200,7 +201,7 @@ class HistoryScreen(QtWidgets.QWidget):
 def _format_cell(record: Dict[str, Any], key: str) -> str:
     value = record.get(key, "")
     if key == "Timestamp" and value:
-        return str(value)[:19].replace("T", " ")
+        return local_time(value)
     if key == "DurationMs":
         return f"{int(value or 0) / 1000:.1f} s"
     return str(value or "")

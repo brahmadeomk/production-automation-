@@ -10,6 +10,7 @@ from ..reports.engine import PERIODS
 from ..reports.excel import OPENPYXL_AVAILABLE, default_filename, export_period
 from .qt import ALIGN_CENTER, QtCore, QtWidgets
 from .widgets import Card, RecordTable, notify
+from ..timeutil import local as local_time
 
 
 class ReportsScreen(QtWidgets.QWidget):
@@ -120,8 +121,8 @@ class ReportsScreen(QtWidgets.QWidget):
         self.by_error.load(summary.by_error)
         self.by_day.load(summary.by_day)
         self.window_label.setText(
-            f"{summary.label}  ·  {summary.start[:19].replace('T', ' ')}"
-            f" to {summary.end[:19].replace('T', ' ')} UTC"
+            f"{summary.label}  ·  {local_time(summary.start)}"
+            f" to {local_time(summary.end)}"
         )
 
     def _export(self) -> None:
