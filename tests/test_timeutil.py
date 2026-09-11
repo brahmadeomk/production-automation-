@@ -224,8 +224,10 @@ def test_the_clock_shows_local_time_and_the_date(qt_app_time, india, tmp_path):
     app, window = _main_window(tmp_path)
     try:
         window._update_clock()
-        expected = datetime.now().strftime("%d %b %H:%M")
-        assert window.clock_label.text().startswith(expected)
+        now = datetime.now()
+        # Two lines: date over time, to keep the navigation bar narrow.
+        assert window.clock_label.text().startswith(now.strftime("%d %b"))
+        assert now.strftime("%H:%M") in window.clock_label.text()
     finally:
         app.close()
 

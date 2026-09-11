@@ -214,6 +214,41 @@ def test_scaled_stylesheet_enlarges_metrics():
     assert start_font(build_stylesheet(1.6)) > base
 
 
+def test_the_bar_fits_a_window_narrower_than_the_screen(qt_app, tmp_path):
+    """Interface scale is chosen from the *screen*, but a windowed station can
+    be far narrower than the screen it sits on.
+
+    On a 1080-tall laptop the scale is 1.6 while the window is about 1024 wide.
+    The navigation bar ran over, so Qt squeezed it: the clock was cut off
+    mid-way through the time and collided with the user name beside it.
+    """
+    from progstation.gui.app import MainWindow
+    from progstation.gui.style import build_stylesheet, scale_for
+    from progstation.security.auth import Session
+
+    app = _station(tmp_path)
+    try:
+        qt_app.setStyleSheet(build_stylesheet(scale_for(1080)))
+        window = MainWindow(app, Session(1, "admin", "A", "admin"), kiosk=False)
+        window.resize(1024, 600)
+        window._update_clock()          # its longest, unverified form
+        window.show()
+        assert window.minimumSizeHint().width() <= 1024, (
+            f"{window.minimumSizeHint().width()} px wide in a 1024 px window "
+            f"at the scale a 1080-tall screen picks"
+        )
+        # And the clock itself must have the room it asked for, or it is
+        # drawn clipped into whatever sits next to it.
+        clock = window.clock_label
+        assert clock.width() >= clock.sizeHint().width(), (
+            f"clock clipped: {clock.width()} px for {clock.sizeHint().width()} px "
+            f"of text"
+        )
+        window.close()
+    finally:
+        app.close()
+
+
 def test_layout_fits_a_ten_inch_panel(qt_app, tmp_path):
     """The 10-inch HDMI panels in use are 1024x600 and 1280x800."""
     from progstation.gui.app import MainWindow

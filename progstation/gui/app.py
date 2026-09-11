@@ -9,7 +9,7 @@ from typing import Optional
 
 from .. import APP_NAME, __version__
 from ..security.auth import Session
-from .qt import QtCore, QtWidgets, exec_app
+from .qt import ALIGN_CENTER, QtCore, QtWidgets, exec_app
 from .style import build_stylesheet, scale_for
 from .widgets import set_kiosk
 
@@ -85,7 +85,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # should not have to leave the production screen to read the clock.
         self.clock_label = QtWidgets.QLabel()
         self.clock_label.setObjectName("Clock")
+        self.clock_label.setAlignment(ALIGN_CENTER)
         nav_layout.addWidget(self.clock_label)
+        # Never let it butt against the user name: squeezed, the two ran
+        # together as "13:admin".
+        nav_layout.addSpacing(12)
 
         # The panel is only 800 px wide, so keep this short: the full name and
         # role go in the tooltip and the status bar.  It must still be visible
@@ -152,10 +156,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         reading = self.app.clock.last
         verified = reading is not None and reading.ok
-        # Short enough for the 800 px panel, and still carrying the date --
-        # the fault that started this was a wrong date, not a wrong time.
+        # Date over time, in two short lines. On one line at the scale a
+        # 1080-tall screen picks it was 233 px wide and pushed the whole
+        # navigation bar past a 1024 px window, so Qt squeezed it and drew the
+        # time clipped into the user name. Stacked it is half that, and still
+        # carries the date -- the fault that started this was a wrong date.
+        now = datetime.now()
         self.clock_label.setText(
-            datetime.now().strftime("%d %b %H:%M") + ("" if verified else " ⚠")
+            now.strftime("%d %b") + "\n" + now.strftime("%H:%M")
+            + ("" if verified else " ⚠")
         )
         name = "Clock" if verified else "ClockUnset"
         if self.clock_label.objectName() != name:

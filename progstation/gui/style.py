@@ -38,8 +38,8 @@ QGroupBox::title {{
 }}
 QLabel#Title      {{ font-size: 22px; font-weight: 700; }}
 QLabel#Subtle     {{ color: {COLOR_MUTED}; font-size: 13px; }}
-QLabel#Clock      {{ font-size: 17px; font-weight: 600; }}
-QLabel#ClockUnset {{ font-size: 17px; font-weight: 600; color: {COLOR_FAIL}; }}
+QLabel#Clock      {{ font-size: 12px; font-weight: 600; }}
+QLabel#ClockUnset {{ font-size: 12px; font-weight: 600; color: {COLOR_FAIL}; }}
 QLabel#BigSerial  {{ font-size: 40px; font-weight: 700; letter-spacing: 2px; }}
 QLabel#StatusPass {{ background: {COLOR_PASS}; color: white; font-size: 34px;
                      font-weight: 700; border-radius: 8px; padding: 14px; }}
