@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Runtime data -- never commit production records
+*.db
+*.db-wal
+*.db-shm
+exports/
+*.xlsx
+*.log
+
+.pytest_cache/
+.coverage

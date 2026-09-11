@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=RPi Sensor Programming Station
+Comment=Production programming station, kiosk mode
+# Autostart inside the desktop session. Copy to ~/.config/autostart/ when the
+# Pi boots to the desktop -- the station then owns the screen without fighting
+# the X server, which is what QT_QPA_PLATFORM=linuxfb would do.
+#
+# The desktop user must be able to read the station's data:
+#     sudo usermod -aG progstation pi
+Exec=/opt/progstation/venv/bin/progstation gui --kiosk
+Terminal=false
+X-GNOME-Autostart-enabled=true

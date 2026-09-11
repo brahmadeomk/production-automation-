@@ -1,0 +1,19 @@
+[Unit]
+Description=RPi Programming Station -- network backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as the station account, NOT root: this process writes BackupLog in the
+# production database, and in WAL mode root would create the -wal/-shm sidecar
+# files root-owned.  If it then died before a clean close, the station could no
+# longer write its own database -- a backup job taking production down.
+#
+# That means the share must already be mounted (set backup.manage_mount: false
+# and mount it from /etc/fstab), because mounting CIFS needs privileges this
+# unit deliberately does not have.
+User=progstation
+Group=progstation
+Environment=PROGSTATION_CONFIG=/etc/progstation/station.yaml
+ExecStart=/opt/progstation/venv/bin/progstation --actor systemd backup run
