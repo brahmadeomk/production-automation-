@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 import sys
 from typing import Optional
 
@@ -80,6 +81,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.nav_buttons[0].setChecked(True)
 
         nav_layout.addStretch(1)
+        # An operator timing a run, or writing a lot number on a traveller,
+        # should not have to leave the production screen to read the clock.
+        self.clock_label = QtWidgets.QLabel()
+        self.clock_label.setObjectName("Clock")
+        nav_layout.addWidget(self.clock_label)
+
         # The panel is only 800 px wide, so keep this short: the full name and
         # role go in the tooltip and the status bar.  It must still be visible
         # -- the operator has to be able to see who the station will record
@@ -105,6 +112,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_timer.timeout.connect(self._update_status)
         self._status_timer.start(15_000)
 
+        # Ticked every second so the minute rolls over when it should, though
+        # only minutes are shown: a seconds counter on a production screen is
+        # movement in the corner of the eye for no benefit.
+        self._update_clock()
+        self._clock_timer = QtCore.QTimer(self)
+        self._clock_timer.timeout.connect(self._update_clock)
+        self._clock_timer.start(1000)
+
         self.main_screen.counters_changed.connect(self.history_screen.refresh)
         self.main_screen.counters_changed.connect(self.reports_screen.refresh)
 
@@ -127,6 +142,32 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(widget, "refresh"):
             widget.refresh()
 
+    def _update_clock(self) -> None:
+        """The wall clock, and whether it can be believed.
+
+        A station that has not reached a time server may be hours or days out.
+        Showing that time plainly would be worse than showing none -- it looks
+        authoritative and it would be written on to paperwork -- so an
+        unverified clock says so and is coloured as a fault.
+        """
+        reading = self.app.clock.last
+        verified = reading is not None and reading.ok
+        # Short enough for the 800 px panel, and still carrying the date --
+        # the fault that started this was a wrong date, not a wrong time.
+        self.clock_label.setText(
+            datetime.now().strftime("%d %b %H:%M") + ("" if verified else " ⚠")
+        )
+        name = "Clock" if verified else "ClockUnset"
+        if self.clock_label.objectName() != name:
+            self.clock_label.setObjectName(name)
+            # A style sheet is matched at polish time, so the new object name
+            # only takes effect once the widget is re-polished.
+            self.clock_label.style().unpolish(self.clock_label)
+            self.clock_label.style().polish(self.clock_label)
+        self.clock_label.setToolTip(
+            self.app.time_status() if reading else "the clock has not been checked"
+        )
+
     def _update_status(self) -> None:
         health = self.app.health()
         parts = [
@@ -136,6 +177,11 @@ class MainWindow(QtWidgets.QMainWindow):
             f"avrdude {health['avrdude_version'] or 'not found'}",
             health["backup"],
         ]
+        reading = self.app.clock.last
+        if reading is None or not reading.ok:
+            # At the front: the bar is longer than the panel and anything
+            # appended to it is simply not on the screen.
+            parts.insert(0, "CLOCK NOT VERIFIED")
         if health["simulated"]:
             # Kept short so the whole bar fits the 800 px panel.
             parts.insert(0, "SIMULATION")

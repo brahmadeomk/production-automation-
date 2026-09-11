@@ -238,6 +238,16 @@ progstation wifi connect --ssid PlantFloor-2G   # prompts for the password
 
 ### 5.7 The clock
 
+The current date and time sit in the top right of every screen, in local time.
+
+A red clock with a **⚠** means the station has not reached a time server, so
+that time may be hours or days out — do not copy it on to paperwork. The
+status bar spells it out as `CLOCK NOT VERIFIED`. Use **Sync clock now**
+below, or call maintenance if it does not clear.
+
+#### Checking and correcting it
+
+
 The Identity page shows the current time and where it came from. Times on
 screen are **local**; the station stores them in UTC internally, and exported
 files carry the UTC offset on every row so they cannot be misread elsewhere.

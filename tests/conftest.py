@@ -90,13 +90,18 @@ def _destroy_leftover_widgets():
     app = QtWidgets.QApplication.instance()
     if app is None:
         return
-    for widget in app.topLevelWidgets():
-        # Destroyed outright, rather than closed and queued for deletion.
-        # close() would run MainWindow's own handler, which logs the operator
-        # out against the database the test has already closed; deleteLater()
-        # would need a turn of the event loop, and turning it lets the screens'
-        # refresh timers fire against that same closed database. sip.delete
-        # takes the C++ object down immediately, stopping its timers, without
-        # running either.
-        if not sip.isdeleted(widget):
-            sip.delete(widget)
+    # Destroyed outright, rather than closed and queued for deletion. close()
+    # would run MainWindow's own handler, which logs the operator out against
+    # the database the test has already closed; deleteLater() would need a turn
+    # of the event loop, and turning it lets the screens' refresh timers fire
+    # against that same closed database. sip.delete takes the C++ object down
+    # immediately, stopping its timers, without running either.
+    #
+    # The list is re-read after every delete: destroying one window destroys
+    # the dialogs parented to it, so anything captured up front goes stale and
+    # deleting through a dangling wrapper segfaults.
+    for _ in range(500):
+        alive = [w for w in app.topLevelWidgets() if not sip.isdeleted(w)]
+        if not alive:
+            break
+        sip.delete(alive[0])
