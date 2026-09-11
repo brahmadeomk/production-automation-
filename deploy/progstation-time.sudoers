@@ -1,0 +1,16 @@
+# Let the station correct its own clock.
+#
+# Every production record is timestamped, so a wrong clock corrupts the
+# traceability evidence -- and a Pi has no battery-backed clock, so left alone
+# it boots believing it is whenever it was last shut down.
+#
+# The station runs as an unprivileged service account, which cannot set the
+# system clock or write the RTC. This grants exactly those two commands and
+# nothing else. Neither can read, alter or exfiltrate production data.
+#
+# Remove this file on a site where the clock is managed centrally and the
+# station must not touch it; the Identity page then reports that it cannot.
+#
+# Installed to /etc/sudoers.d/progstation-time, mode 0440.
+
+progstation ALL=(root) NOPASSWD: /usr/bin/date, /sbin/hwclock, /usr/sbin/hwclock, /bin/date

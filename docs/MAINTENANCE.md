@@ -146,7 +146,57 @@ sudo nmcli device wifi list
 sudo nmcli --ask device wifi connect <ssid>
 ```
 
-### 2.6 When SSH will not connect
+### 2.6 The clock
+
+Every production record is timestamped, so a wrong clock corrupts the
+traceability evidence the station exists to produce. A Pi 4 has **no
+battery-backed clock**: left alone it boots believing it is whenever it was
+last shut down, which is why a station that has been powered off over a
+weekend comes up days behind.
+
+The station chases the time in this order, at start-up and then daily:
+
+| Order | Source | Why |
+|---|---|---|
+| 1 | A time server on the plant network | Closest, works with no route to the internet, and agrees with the other equipment the records are compared against |
+| 2 | An internet time server | If the station has a route out |
+| 3 | The hardware RTC, if fitted | Not a sync but a reading — what carries the time across a power cut |
+
+Whenever 1 or 2 answers, the RTC is written back, so the next cold start has
+something better than the last shutdown to go on.
+
+Set your own servers in `station.yaml` — this is the part worth changing,
+since the defaults are guesses:
+
+```yaml
+time:
+  enabled: true
+  lan_servers: [ntp.plant.local, 192.168.1.1]   # yours: often the DC or gateway
+  internet_servers: [pool.ntp.org, time.google.com]
+  interval_hours: 24
+```
+
+Check it from the panel at **Settings → Identity** (the Clock row, and
+**Sync clock now**), or over SSH:
+
+```bash
+sudo -u progstation /opt/progstation/venv/bin/progstation time
+sudo -u progstation /opt/progstation/venv/bin/progstation time sync
+```
+
+Setting the clock needs privilege the station does not otherwise have.
+`install.sh` adds `/etc/sudoers.d/progstation-time` granting exactly two
+commands — `date` and `hwclock` — and nothing else. Without it the station can
+read the time but not apply it, and says so rather than failing quietly.
+Remove that file on a site where the clock is managed centrally.
+
+> **Timestamps are stored in UTC and displayed in local time.** If the dates
+> on screen look like yesterday, check the station's timezone
+> (`timedatectl set-timezone Asia/Kolkata`) before suspecting the clock.
+> Exports carry the UTC offset on every row and name the zone in Export Info,
+> so a file read in another office cannot be misread.
+
+### 2.7 When SSH will not connect
 
 | Symptom | Check |
 |---|---|

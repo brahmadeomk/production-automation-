@@ -128,6 +128,26 @@ class SecurityConfig:
 
 
 @dataclass
+class TimeConfig:
+    """Where the station gets the time (SRS section 11 traceability).
+
+    Tried in order: a server on the plant network first, because records are
+    compared against other equipment on that network and agreeing with it
+    matters more than absolute accuracy; then the internet; then the RTC.
+    """
+    enabled: bool = True
+    #: Time servers on the plant network. Put yours here -- often the domain
+    #: controller, the MES host or the gateway.
+    lan_servers: List[str] = field(default_factory=lambda: ["ntp.local", "gateway"])
+    internet_servers: List[str] = field(default_factory=lambda: [
+        "pool.ntp.org", "time.google.com",
+    ])
+    #: How often to re-check. Daily is plenty for a clock that is written to
+    #: an RTC each time.
+    interval_hours: int = 24
+
+
+@dataclass
 class StationConfig:
     station_id: str = "STATION-01"
     data_dir: str = "/var/lib/progstation"
@@ -144,6 +164,7 @@ class StationConfig:
     backup: BackupConfig = field(default_factory=BackupConfig)
     reports: ReportConfig = field(default_factory=ReportConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    time: TimeConfig = field(default_factory=TimeConfig)
     #: Where this configuration was loaded from (informational).
     source_path: Optional[str] = None
 

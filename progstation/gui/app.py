@@ -212,6 +212,10 @@ def run_gui(app, *, fullscreen: bool = True, kiosk: bool = False) -> int:
         scale,
     )
 
+    # A station that has just been powered on is exactly the one whose clock
+    # is wrong, so this syncs immediately and then daily.
+    app.clock.start_scheduler()
+
     password = app.bootstrap_admin()
     if password:
         QtWidgets.QMessageBox.information(

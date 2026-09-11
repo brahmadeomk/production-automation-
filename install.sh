@@ -142,6 +142,18 @@ else
     warn "change networks (scanning still works). Configure Wi-Fi over SSH."
 fi
 
+# Let the station correct its own clock: two commands, nothing else. Without
+# this it can read the time but not apply it, and says so on the Identity page.
+install -m 0440 "$SOURCE_DIR/deploy/progstation-time.sudoers" \
+    /etc/sudoers.d/progstation-time
+if visudo -c -f /etc/sudoers.d/progstation-time >/dev/null 2>&1; then
+    log "Clock correction enabled"
+else
+    rm -f /etc/sudoers.d/progstation-time
+    warn "sudoers snippet rejected; the station will not be able to set its"
+    warn "clock. Timestamps stay as they are until this is resolved."
+fi
+
 systemctl daemon-reload
 systemctl enable progstation.service
 log "Backup timer left disabled; enable it once the share is configured:"

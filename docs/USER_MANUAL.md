@@ -236,7 +236,21 @@ progstation wifi list
 progstation wifi connect --ssid PlantFloor-2G   # prompts for the password
 ```
 
-### 5.7 Audit log
+### 5.7 The clock
+
+The Identity page shows the current time and where it came from. Times on
+screen are **local**; the station stores them in UTC internally, and exported
+files carry the UTC offset on every row so they cannot be misread elsewhere.
+
+**Sync clock now** re-checks immediately — a plant time server first, then the
+internet, then the station's own hardware clock. This also happens at start-up
+and once a day, so it is normally only needed after the station has been moved
+or has been powered off for a long time.
+
+If it reports the clock was well out, records written before that point carry
+the wrong time. Note it; the entries themselves are not rewritten.
+
+### 5.8 Audit log
 
 Every login, project change, user change and serial-counter override, with who
 and when. Read-only by design.
@@ -370,3 +384,4 @@ recoverable with this station.
 | Status bar shows a backup failure | Network or share problem; production is unaffected |
 | Need this station's MAC or Wi-Fi network | **Settings → Identity**, or `progstation identity` over SSH |
 | Station must move to a different Wi-Fi network | **Settings → Wi-Fi**, or `progstation wifi` over SSH |
+| Times in the log look wrong | **Settings → Identity** shows the clock and where it came from; **Sync clock now** re-checks |

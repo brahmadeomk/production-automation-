@@ -141,6 +141,51 @@ def cmd_wifi(app: StationApp, args) -> int:
     return EXIT_OK if result.ok else EXIT_FAIL
 
 
+def cmd_time(app: StationApp, args) -> int:
+    """Show or refresh the station clock."""
+    from .hw.timesync import rtc_present
+    from .timeutil import local as local_time, zone_name
+
+    reading = app.clock.sync() if args.time_action == "sync" else app.clock.last
+    if args.json:
+        _emit(
+            {
+                "ok": bool(reading and reading.ok),
+                "source": reading.source if reading else "not checked yet",
+                "server": reading.server if reading else "",
+                "utc": reading.utc.isoformat() if reading and reading.utc else "",
+                "drift_s": reading.drift_s if reading else None,
+                "detail": reading.detail if reading else "",
+                "rtc_fitted": rtc_present(),
+                "timezone": zone_name(),
+            },
+            True,
+        )
+        return EXIT_OK if (reading and reading.ok) else EXIT_FAIL
+
+    print(f"{APP_NAME} {__version__}")
+    print(f"  system clock  : {local_time(_utc_now_iso())}")
+    print(f"  timezone      : {zone_name()}")
+    print(f"  RTC fitted    : {'yes' if rtc_present() else 'no'}")
+    if reading is None:
+        print("  last sync     : not checked yet (run 'time sync')")
+        return EXIT_OK
+    print(f"  source        : {reading.source}")
+    if reading.server:
+        print(f"  server        : {reading.server}")
+    if reading.drift_s is not None:
+        print(f"  clock was out : {reading.drift_s:+.3f} s")
+    if reading.detail:
+        print(f"  detail        : {reading.detail}")
+    return EXIT_OK if reading.ok else EXIT_FAIL
+
+
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 def cmd_init(app: StationApp, args) -> int:
     password = app.bootstrap_admin()
     if password:
@@ -692,6 +737,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "identity", help="show the device id, MAC and connected SSID"
     ).set_defaults(func=cmd_identity)
+
+    time_parser = sub.add_parser("time", help="show or refresh the station clock")
+    time_parser.add_argument(
+        "time_action", choices=["show", "sync"], nargs="?", default="show"
+    )
+    time_parser.set_defaults(func=cmd_time)
 
     wifi_parser = sub.add_parser("wifi", help="scan for and join a Wi-Fi network")
     wifi_parser.add_argument(

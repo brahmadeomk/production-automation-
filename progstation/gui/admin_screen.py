@@ -22,6 +22,12 @@ from .widgets import (
 )
 
 
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 class AdminScreen(QtWidgets.QWidget):
     projects_changed = QtCore.pyqtSignal()
 
@@ -242,6 +248,7 @@ class AdminScreen(QtWidgets.QWidget):
             ("hostname", "Hostname"),
             ("model", "Board"),
             ("board_serial", "Board serial"),
+            ("clock", "Clock"),
         ):
             label = QtWidgets.QLabel("")
             label.setWordWrap(True)
@@ -269,10 +276,33 @@ class AdminScreen(QtWidgets.QWidget):
         refresh.setObjectName("Primary")
         refresh.clicked.connect(self.refresh_identity)
         buttons.addWidget(refresh)
+        sync = QtWidgets.QPushButton("Sync clock now")
+        sync.clicked.connect(self._sync_clock)
+        buttons.addWidget(sync)
         buttons.addStretch(1)
         layout.addLayout(buttons)
         layout.addStretch(1)
         return page
+
+    def _sync_clock(self) -> None:
+        """Chase the clock now rather than waiting for the daily pass."""
+        QtWidgets.QApplication.setOverrideCursor(
+            QtCore.Qt.CursorShape.WaitCursor if hasattr(QtCore.Qt, "CursorShape")
+            else QtCore.Qt.WaitCursor
+        )
+        try:
+            reading = self.app.clock.sync()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self.refresh_identity()
+        self.app.db.audit(
+            self.session.username, "time.sync",
+            reading.server or reading.source, reading.detail,
+        )
+        notify(
+            self, "Clock" if reading.ok else "Clock not corrected",
+            reading.detail, error=not reading.ok,
+        )
 
     # ------------------------------------------------------------------ wi-fi
     def _wifi_tab(self) -> QtWidgets.QWidget:
@@ -367,6 +397,9 @@ class AdminScreen(QtWidgets.QWidget):
         identity = gather(self.app.config.station_id)
         for key, label in self.identity_labels.items():
             label.setText(str(getattr(identity, key, "")))
+        self.identity_labels["clock"].setText(
+            f"{local_time(_utc_now())}  -  {self.app.time_status()}"
+        )
         self.interface_table.load([
             {
                 "name": interface.name,

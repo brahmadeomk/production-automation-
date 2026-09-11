@@ -22,6 +22,9 @@ from .hw.station_io import StationIO
 from .reports.engine import ReportEngine
 from .security.auth import AuthManager, Session
 
+from .hw.timesync import TimeKeeper
+from .timeutil import local as local_time
+
 log = logging.getLogger(__name__)
 
 
@@ -92,6 +95,7 @@ class StationApp:
             extra_dirs=[self.config.reports.export_dir, self.config.log_dir],
             station_id=self.config.station_id,
         )
+        self.clock = TimeKeeper(self.config.time)
         self.session: Optional[Session] = None
 
     # ------------------------------------------------------------------ misc
@@ -123,9 +127,23 @@ class StationApp:
             "projects": len(self.db.list_projects()),
             "users": len(self.db.list_users()),
             "backup": self.backup.status(),
+            "time_source": self.time_status(),
         }
 
+    def time_status(self) -> str:
+        """What the clock is currently trusting, for the status line."""
+        reading = self.clock.last
+        if reading is None:
+            return "not checked yet"
+        if not reading.ok:
+            return reading.detail
+        stamp = local_time(reading.utc) if reading.utc else ""
+        suffix = "  (clock was well out - check the records around it)" \
+            if reading.suspect else ""
+        return f"{reading.source} at {stamp}{suffix}"
+
     def close(self) -> None:
+        self.clock.stop_scheduler()
         self.backup.stop_scheduler()
         if self.io:
             self.io.close()
